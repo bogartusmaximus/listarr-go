@@ -131,6 +131,9 @@ paths:
                   type: string
                   example: http://127.0.0.1:7878
                 apiKey: { type: string }
+                authCookie:
+                  type: string
+                  description: Optional Cookie header for reverse-proxy auth
       responses:
         "200":
           description: Connection OK
@@ -236,6 +239,9 @@ components:
           type: string
           example: http://127.0.0.1:7878
         apiKey: { type: string }
+        authCookie:
+          type: string
+          description: Optional Cookie header for reverse-proxy auth (e.g. oauth2-proxy)
     SyncRequest:
       type: object
       required: [source, mediaType, target]

@@ -69,7 +69,8 @@ type Radarr struct {
 }
 
 // NewRadarr requires an absolute base URL and API key.
-func NewRadarr(baseURL, apiKey string, httpClient *httpx.Client) (*Radarr, error) {
+// authCookie is an optional Cookie header value (e.g. _oauth2_proxy=...).
+func NewRadarr(baseURL, apiKey, authCookie string, httpClient *httpx.Client) (*Radarr, error) {
 	base, err := normalizeBase(baseURL)
 	if err != nil {
 		return nil, err
@@ -77,7 +78,7 @@ func NewRadarr(baseURL, apiKey string, httpClient *httpx.Client) (*Radarr, error
 	if apiKey == "" {
 		return nil, fmt.Errorf("radarr api key is required")
 	}
-	return &Radarr{base: base, http: keyedClient(apiKey, httpClient)}, nil
+	return &Radarr{base: base, http: keyedClient(apiKey, authCookie, httpClient)}, nil
 }
 
 // ListMovies returns TMDB-keyed movie refs from the library.
@@ -172,7 +173,8 @@ type Sonarr struct {
 }
 
 // NewSonarr requires an absolute base URL and API key.
-func NewSonarr(baseURL, apiKey string, httpClient *httpx.Client) (*Sonarr, error) {
+// authCookie is an optional Cookie header value (e.g. _oauth2_proxy=...).
+func NewSonarr(baseURL, apiKey, authCookie string, httpClient *httpx.Client) (*Sonarr, error) {
 	base, err := normalizeBase(baseURL)
 	if err != nil {
 		return nil, err
@@ -180,7 +182,7 @@ func NewSonarr(baseURL, apiKey string, httpClient *httpx.Client) (*Sonarr, error
 	if apiKey == "" {
 		return nil, fmt.Errorf("sonarr api key is required")
 	}
-	return &Sonarr{base: base, http: keyedClient(apiKey, httpClient)}, nil
+	return &Sonarr{base: base, http: keyedClient(apiKey, authCookie, httpClient)}, nil
 }
 
 // ListSeries returns TMDB-keyed series refs from the library.
@@ -339,7 +341,7 @@ type ConnectionTest struct {
 }
 
 // TestConnection calls GET /api/v3/system/status on the given base URL.
-func TestConnection(ctx context.Context, kind Kind, baseURL, apiKey string, httpClient *httpx.Client) (ConnectionTest, error) {
+func TestConnection(ctx context.Context, kind Kind, baseURL, apiKey, authCookie string, httpClient *httpx.Client) (ConnectionTest, error) {
 	kind = Kind(strings.ToLower(strings.TrimSpace(string(kind))))
 	if kind != KindRadarr && kind != KindSonarr {
 		return ConnectionTest{}, fmt.Errorf("kind must be radarr or sonarr")
@@ -351,13 +353,14 @@ func TestConnection(ctx context.Context, kind Kind, baseURL, apiKey string, http
 	if strings.TrimSpace(apiKey) == "" {
 		return ConnectionTest{}, fmt.Errorf("api key is required")
 	}
-	hc := keyedClient(apiKey, httpClient)
+	hc := keyedClient(apiKey, authCookie, httpClient)
 	rawURL := base + "/api/v3/system/status"
 	resp, body, err := hc.DoJSON(ctx, http.MethodGet, rawURL, nil, nil)
 	if err != nil {
-		return ConnectionTest{OK: false, Kind: kind, Message: err.Error()}, nil
+		msg := redact.APIKey(err.Error(), authCookie)
+		return ConnectionTest{OK: false, Kind: kind, Message: msg}, nil
 	}
-	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
+	if err := httpx.CheckStatusRedact(resp, rawURL, body, authCookie); err != nil {
 		return ConnectionTest{OK: false, Kind: kind, Message: err.Error()}, nil
 	}
 	var status struct {
@@ -376,7 +379,7 @@ func TestConnection(ctx context.Context, kind Kind, baseURL, apiKey string, http
 	}, nil
 }
 
-func keyedClient(apiKey string, template *httpx.Client) *httpx.Client {
+func keyedClient(apiKey, authCookie string, template *httpx.Client) *httpx.Client {
 	timeout := time.Duration(0)
 	if template != nil {
 		timeout = template.Timeout
@@ -384,6 +387,7 @@ func keyedClient(apiKey string, template *httpx.Client) *httpx.Client {
 	hc := httpx.New(timeout)
 	hc.APIKey = apiKey
 	hc.Header = "X-Api-Key"
+	hc.Cookie = strings.TrimSpace(authCookie)
 	return hc
 }
 

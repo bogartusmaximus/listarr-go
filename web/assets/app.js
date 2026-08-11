@@ -125,7 +125,9 @@
     const name = escapeHtml(inst.name || "");
     const url = escapeHtml(inst.url || "");
     const apiKey = escapeHtml(inst.apiKey || "");
+    const authCookie = escapeHtml(inst.authCookie || "");
     const kind = inst.kind === "sonarr" ? "sonarr" : "radarr";
+    const advancedOpen = Boolean(inst.authCookie);
     row.innerHTML = `
       <label class="field"><span>Name</span><input type="text" class="arr-name" value="${name}" placeholder="local" required /></label>
       <label class="field"><span>Kind</span>
@@ -144,10 +146,29 @@
       </label>
       <button type="button" class="btn arr-test">Test</button>
       <button type="button" class="btn danger arr-remove">Remove</button>
+      <div class="arr-advanced">
+        <label class="field check arr-advanced-toggle">
+          <input type="checkbox" class="arr-advanced-check"${advancedOpen ? " checked" : ""} />
+          <span>Advanced</span>
+        </label>
+        <div class="arr-advanced-body"${advancedOpen ? "" : " hidden"}>
+          <label class="field secret-field"><span>Auth cookie</span>
+            <div class="secret-row">
+              <input type="password" class="arr-cookie" value="${authCookie}" autocomplete="off" spellcheck="false" placeholder="_oauth2_proxy=…" />
+              <button type="button" class="btn arr-cookie-toggle">Show</button>
+              <button type="button" class="btn arr-cookie-copy">Copy</button>
+            </div>
+          </label>
+          <p class="hint">Sent as Cookie header for reverse-proxy auth (e.g. oauth2-proxy).</p>
+        </div>
+      </div>
     `;
     row.querySelector(".arr-remove").addEventListener("click", () => row.remove());
     row.querySelector(".arr-test").addEventListener("click", () => {
       testArrRow(row).catch((err) => toast(err.message));
+    });
+    row.querySelector(".arr-advanced-check").addEventListener("change", (ev) => {
+      row.querySelector(".arr-advanced-body").hidden = !ev.currentTarget.checked;
     });
     row.querySelector(".arr-toggle").addEventListener("click", (ev) => {
       const input = row.querySelector(".arr-key");
@@ -164,6 +185,21 @@
         toast("Copy failed");
       }
     });
+    row.querySelector(".arr-cookie-toggle").addEventListener("click", (ev) => {
+      const input = row.querySelector(".arr-cookie");
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      ev.currentTarget.textContent = show ? "Hide" : "Show";
+    });
+    row.querySelector(".arr-cookie-copy").addEventListener("click", async () => {
+      const input = row.querySelector(".arr-cookie");
+      try {
+        await navigator.clipboard.writeText(input.value || "");
+        toast("Copied");
+      } catch {
+        toast("Copy failed");
+      }
+    });
     return row;
   }
 
@@ -173,6 +209,7 @@
       kind: row.querySelector(".arr-kind").value,
       url: row.querySelector(".arr-url").value.trim(),
       apiKey: row.querySelector(".arr-key").value.trim(),
+      authCookie: row.querySelector(".arr-cookie").value.trim(),
     };
     if (!payload.url || !payload.apiKey) {
       throw new Error("URL and API key are required to test");
@@ -237,8 +274,9 @@
       const url = row.querySelector(".arr-url").value.trim();
       const apiKey = row.querySelector(".arr-key").value.trim();
       const kind = row.querySelector(".arr-kind").value;
+      const authCookie = row.querySelector(".arr-cookie").value.trim();
       if (!name && !url && !apiKey) continue;
-      arrInstances.push({ name, kind, url, apiKey });
+      arrInstances.push({ name, kind, url, apiKey, authCookie });
     }
     return {
       apiKey: $("setApiKey").value.trim(),

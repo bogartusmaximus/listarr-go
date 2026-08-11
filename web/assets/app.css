@@ -452,6 +452,17 @@ legend {
   }
 }
 
+.arr-advanced {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arr-advanced-body {
+  display: grid;
+  gap: 0.35rem;
+}
+
 .settings-form code {
   font-size: 0.9em;
 }

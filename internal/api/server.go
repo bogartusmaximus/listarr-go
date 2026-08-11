@@ -191,10 +191,11 @@ func (s *Server) handleArrInstances(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleArrTest(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name   string `json:"name"`
-		Kind   string `json:"kind"`
-		URL    string `json:"url"`
-		APIKey string `json:"apiKey"`
+		Name       string `json:"name"`
+		Kind       string `json:"kind"`
+		URL        string `json:"url"`
+		APIKey     string `json:"apiKey"`
+		AuthCookie string `json:"authCookie"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid json"})
@@ -204,7 +205,7 @@ func (s *Server) handleArrTest(w http.ResponseWriter, r *http.Request) {
 	if s.rt != nil {
 		httpClient = s.rt.HTTPClient
 	}
-	result, err := arr.TestConnection(r.Context(), arr.Kind(req.Kind), req.URL, req.APIKey, httpClient)
+	result, err := arr.TestConnection(r.Context(), arr.Kind(req.Kind), req.URL, req.APIKey, req.AuthCookie, httpClient)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
