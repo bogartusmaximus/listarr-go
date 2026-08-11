@@ -13,7 +13,16 @@ type Settings struct {
 	TorboxSearchPerHour int                   `json:"torboxSearchPerHour"`
 	TMDBAPIKey          string                `json:"tmdbApiKey"`
 	ArrInstances        []ArrInstanceSettings `json:"arrInstances"`
+	Plex                PlexSettings          `json:"plex"`
 	UpdatedAt           time.Time             `json:"updatedAt"`
+}
+
+// PlexSettings holds PMS URL and plex.tv auth token for library path lookup.
+type PlexSettings struct {
+	ServerURL          string `json:"serverUrl"`
+	Token              string `json:"token,omitempty"`
+	ClientIdentifier   string `json:"clientIdentifier,omitempty"`
+	AccountUsername    string `json:"accountUsername,omitempty"`
 }
 
 type settingsJSON struct {
@@ -24,6 +33,7 @@ type settingsJSON struct {
 	TorboxSearchPerHour int                   `json:"torboxSearchPerHour"`
 	TMDBAPIKey          string                `json:"tmdbApiKey"`
 	ArrInstances        []ArrInstanceSettings `json:"arrInstances"`
+	Plex                PlexSettings          `json:"plex"`
 	UpdatedAt           time.Time             `json:"updatedAt"`
 }
 
@@ -39,6 +49,7 @@ func (s *Settings) UnmarshalJSON(data []byte) error {
 	s.TorboxSearchPerHour = raw.TorboxSearchPerHour
 	s.TMDBAPIKey = raw.TMDBAPIKey
 	s.ArrInstances = raw.ArrInstances
+	s.Plex = raw.Plex
 	s.UpdatedAt = raw.UpdatedAt
 	switch {
 	case raw.SafeMode != nil:

@@ -127,7 +127,6 @@
     const apiKey = escapeHtml(inst.apiKey || "");
     const authCookie = escapeHtml(inst.authCookie || "");
     const kind = inst.kind === "sonarr" ? "sonarr" : "radarr";
-    const advancedOpen = Boolean(inst.authCookie);
     row.innerHTML = `
       <label class="field"><span>Name</span><input type="text" class="arr-name" value="${name}" placeholder="local" required /></label>
       <label class="field"><span>Kind</span>
@@ -148,10 +147,10 @@
       <button type="button" class="btn danger arr-remove">Remove</button>
       <div class="arr-advanced">
         <label class="field check arr-advanced-toggle">
-          <input type="checkbox" class="arr-advanced-check"${advancedOpen ? " checked" : ""} />
+          <input type="checkbox" class="arr-advanced-check" />
           <span>Advanced</span>
         </label>
-        <div class="arr-advanced-body"${advancedOpen ? "" : " hidden"}>
+        <div class="arr-advanced-body" hidden>
           <label class="field secret-field"><span>Auth cookie</span>
             <div class="secret-row">
               <input type="password" class="arr-cookie" value="${authCookie}" autocomplete="off" spellcheck="false" placeholder="_oauth2_proxy=…" />
@@ -163,6 +162,11 @@
         </div>
       </div>
     `;
+    // Keep cookie value in the DOM even when Advanced is collapsed; only show the pane when checked.
+    if (authCookie) {
+      row.querySelector(".arr-advanced-check").checked = true;
+      row.querySelector(".arr-advanced-body").hidden = false;
+    }
     row.querySelector(".arr-remove").addEventListener("click", () => row.remove());
     row.querySelector(".arr-test").addEventListener("click", () => {
       testArrRow(row).catch((err) => toast(err.message));
@@ -245,6 +249,12 @@
     return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  function renderPlexStatus(plex = {}) {
+    const linked = Boolean(plex.token);
+    const who = plex.accountUsername ? ` as ${plex.accountUsername}` : "";
+    $("plexStatus").textContent = linked ? `Linked${who}` : "Not linked";
+  }
+
   function renderSettings(set) {
     $("setInstanceName").value = set.instanceName || "";
     $("setApiKey").value = set.apiKey || "";
@@ -257,6 +267,13 @@
     $("setTmdb").type = "password";
     const tmdbToggle = document.querySelector('[data-toggle-secret="setTmdb"]');
     if (tmdbToggle) tmdbToggle.textContent = "Show";
+    const plex = set.plex || {};
+    $("setPlexURL").value = plex.serverUrl || "";
+    $("setPlexToken").value = plex.token || "";
+    $("setPlexToken").type = "password";
+    const plexToggle = document.querySelector('[data-toggle-secret="setPlexToken"]');
+    if (plexToggle) plexToggle.textContent = "Show";
+    renderPlexStatus(plex);
     const wrap = $("arrInstances");
     wrap.innerHTML = "";
     const list = set.arrInstances || [];
@@ -284,6 +301,10 @@
       safeMode: $("setSafeMode").checked,
       torboxSearchPerHour: Number($("setTorbox").value) || 60,
       tmdbApiKey: $("setTmdb").value.trim(),
+      plex: {
+        serverUrl: $("setPlexURL").value.trim(),
+        token: $("setPlexToken").value.trim(),
+      },
       arrInstances,
     };
   }
@@ -447,6 +468,73 @@
     }
   }
 
+  async function refreshPlexRoots() {
+    const hint = $("syncRootHint");
+    const list = $("syncRootList");
+    list.innerHTML = "";
+    const mediaType = $("syncMedia").value === "tv" ? "tv" : "movie";
+    try {
+      const body = await api(`/api/v1/plex/libraries?mediaType=${encodeURIComponent(mediaType)}`);
+      const libs = body.libraries || [];
+      for (const lib of libs) {
+        const opt = document.createElement("option");
+        opt.value = lib.path || "";
+        opt.label = lib.sectionTitle ? `${lib.sectionTitle} (${lib.path})` : lib.path;
+        list.appendChild(opt);
+      }
+      if (libs.length) {
+        hint.textContent = `${libs.length} Plex library path(s) available — pick or type a path.`;
+        if (!$("syncRoot").value && libs[0].path) {
+          $("syncRoot").value = libs[0].path;
+        }
+      } else {
+        hint.textContent = "No matching Plex library paths — type a root folder path.";
+      }
+    } catch (err) {
+      hint.textContent = `Plex libraries unavailable (${err.message}). Type a root folder path.`;
+    }
+  }
+
+  async function linkPlex() {
+    const pin = await api("/api/v1/plex/auth/pin", { method: "POST", body: "{}" });
+    if (pin.authUrl) {
+      window.open(pin.authUrl, "_blank", "noopener,noreferrer");
+    }
+    toast(`Approve code ${pin.code} in Plex, then return here`);
+    const deadline = Date.now() + 5 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const status = await api(`/api/v1/plex/auth/pin/${pin.id}`);
+      if (status.linked) {
+        await loadSettings();
+        await refreshPlexRoots();
+        toast(status.accountUsername ? `Linked as ${status.accountUsername}` : "Plex linked");
+        return;
+      }
+    }
+    throw new Error("Plex link timed out — try again");
+  }
+
+  async function testPlex() {
+    const body = await api("/api/v1/plex/test", {
+      method: "POST",
+      body: JSON.stringify({
+        serverUrl: $("setPlexURL").value.trim(),
+        token: $("setPlexToken").value.trim(),
+      }),
+    });
+    if (!body.ok) throw new Error(body.message || "plex test failed");
+    toast(body.serverName ? `OK — ${body.serverName}` : "OK — Plex connected");
+  }
+
+  async function unlinkPlex() {
+    if (!window.confirm("Unlink Plex auth token from settings?")) return;
+    await api("/api/v1/plex/auth", { method: "DELETE" });
+    $("setPlexToken").value = "";
+    renderPlexStatus({});
+    toast("Plex unlinked");
+  }
+
   function switchTab(name) {
     for (const btn of document.querySelectorAll(".tab")) {
       const on = btn.dataset.tab === name;
@@ -464,6 +552,9 @@
     if (name === "settings" && apiKey()) {
       loadSettings().catch((err) => toast(err.message));
     }
+    if (name === "sync" && apiKey()) {
+      refreshPlexRoots().catch(() => {});
+    }
   }
 
   function wire() {
@@ -472,6 +563,9 @@
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
     }
     $("syncSource").addEventListener("change", toggleSourceFields);
+    $("syncMedia").addEventListener("change", () => {
+      refreshPlexRoots().catch(() => {});
+    });
     $("syncForm").addEventListener("submit", (ev) => {
       ev.preventDefault();
       runSync(false).catch((err) => toast(err.message));
@@ -491,6 +585,15 @@
     });
     $("settingsForm").addEventListener("submit", (ev) => {
       saveSettings(ev).catch((err) => toast(err.message));
+    });
+    $("btnPlexLink").addEventListener("click", () => {
+      linkPlex().catch((err) => toast(err.message));
+    });
+    $("btnPlexTest").addEventListener("click", () => {
+      testPlex().catch((err) => toast(err.message));
+    });
+    $("btnPlexUnlink").addEventListener("click", () => {
+      unlinkPlex().catch((err) => toast(err.message));
     });
     for (const btn of document.querySelectorAll("[data-toggle-secret]")) {
       btn.addEventListener("click", () => {

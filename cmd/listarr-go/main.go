@@ -45,7 +45,7 @@ func main() {
 	}
 
 	budget := ratelimit.NewHourlyBudget(settings.TorboxSearchPerHour)
-	httpClient := httpx.New(20 * time.Second)
+	httpClient := httpx.New(120 * time.Second)
 	rt := &appstate.Runtime{
 		Store:        st,
 		HTTPClient:   httpClient,
@@ -63,7 +63,7 @@ func main() {
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      120 * time.Second,
+		WriteTimeout:      180 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
