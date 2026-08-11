@@ -4,7 +4,7 @@ info:
   description: |
     Public listarr-go API. Inspired by fisherd80/Listarr (MIT).
     Safe defaults: loopback listen, apply opt-in, no private host defaults.
-  version: 0.1.0
+  version: 0.2.0
 servers:
   - url: http://127.0.0.1:8787
     description: Local loopback (default)
@@ -16,94 +16,130 @@ paths:
       responses:
         "200":
           description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status]
-                properties:
-                  status:
-                    type: string
-                    example: ok
   /api/v1/system/status:
     get:
       operationId: systemStatus
-      summary: Instance status
       security:
         - ApiKeyHeader: []
-        - ApiKeyQuery: []
       responses:
         "200":
           description: Status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SystemStatus"
         "401":
-          description: Missing or invalid API key
-  /api/v1/sync/{listId}/preview:
+          description: Unauthorized
+  /api/v1/discover/movies:
+    get:
+      operationId: discoverMovies
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: sort_by
+          in: query
+          schema: { type: string }
+        - name: year
+          in: query
+          schema: { type: integer }
+        - name: vote_average.gte
+          in: query
+          schema: { type: number }
+      responses:
+        "200":
+          description: Discover results
+        "503":
+          description: TMDB not configured
+  /api/v1/discover/tv:
+    get:
+      operationId: discoverTV
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Discover results
+        "503":
+          description: TMDB not configured
+  /api/v1/sync/preview:
     post:
       operationId: syncPreview
-      summary: Preview list sync (stub until providers land)
       security:
         - ApiKeyHeader: []
-      parameters:
-        - $ref: "#/components/parameters/ListId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncRequest"
       responses:
-        "501":
-          description: Not implemented yet
-  /api/v1/sync/{listId}/apply:
+        "200":
+          description: Preview result
+        "400":
+          description: Invalid request
+  /api/v1/sync/apply:
     post:
       operationId: syncApply
-      summary: Apply list sync (requires LISTARR_APPLY=1)
       security:
         - ApiKeyHeader: []
-      parameters:
-        - $ref: "#/components/parameters/ListId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncRequest"
       responses:
+        "200":
+          description: Apply result
         "403":
           description: Apply disabled
-        "501":
-          description: Not implemented yet
 components:
   securitySchemes:
     ApiKeyHeader:
       type: apiKey
       in: header
       name: X-Api-Key
-    ApiKeyQuery:
-      type: apiKey
-      in: query
-      name: apikey
-  parameters:
-    ListId:
-      name: listId
-      in: path
-      required: true
-      schema:
-        type: string
   schemas:
-    SystemStatus:
+    SyncRequest:
       type: object
-      required:
-        - appName
-        - version
-        - instanceName
-        - applyEnabled
-        - torboxSearchPerHour
-        - torboxSearchRemaining
+      required: [source, mediaType, target]
       properties:
-        appName:
+        source:
           type: string
-          example: listarr-go
-        version:
+          enum: [tmdb]
+        mediaType:
           type: string
-        instanceName:
+          enum: [movie, tv]
+        tmdbIds:
+          type: array
+          items: { type: integer }
+        discover:
+          type: object
+          properties:
+            page: { type: integer }
+            sortBy: { type: string }
+            year: { type: integer }
+            voteAverageGte: { type: number }
+            voteCountGte: { type: integer }
+        maxItems:
+          type: integer
+          maximum: 50
+        target:
+          $ref: "#/components/schemas/Target"
+    Target:
+      type: object
+      required: [rootFolderPath, qualityProfileId]
+      properties:
+        rootFolderPath:
           type: string
-        applyEnabled:
+          example: /data/movies
+        qualityProfileId:
+          type: integer
+          minimum: 1
+        tags:
+          type: array
+          items: { type: integer }
+        monitored:
           type: boolean
-        torboxSearchPerHour:
-          type: integer
-          example: 60
-        torboxSearchRemaining:
-          type: integer
+        searchOnAdd:
+          type: boolean
+        seasonFolder:
+          type: boolean

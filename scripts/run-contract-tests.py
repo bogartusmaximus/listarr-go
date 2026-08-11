@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HTTP contract checks for listarr-go (health, auth, apply gate)."""
+"""HTTP contract checks for listarr-go (health, auth, apply gate, sync routes)."""
 
 from __future__ import annotations
 
@@ -16,9 +16,10 @@ def request(
     url: str,
     *,
     headers: dict[str, str] | None = None,
+    data: bytes | None = None,
     timeout: float = 10.0,
 ) -> tuple[int, Any]:
-    req = urllib.request.Request(url, method=method, headers=headers or {})
+    req = urllib.request.Request(url, method=method, data=data, headers=headers or {})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read()
@@ -73,16 +74,36 @@ def main() -> int:
     else:
         print("PASS status auth")
 
+    payload = json.dumps(
+        {
+            "source": "tmdb",
+            "mediaType": "movie",
+            "tmdbIds": [1],
+            "target": {"rootFolderPath": "/data/movies", "qualityProfileId": 1},
+        }
+    ).encode()
     status, _ = request(
         "POST",
-        f"{base}/api/v1/sync/demo/apply",
-        headers={"X-Api-Key": key},
+        f"{base}/api/v1/sync/apply",
+        headers={"X-Api-Key": key, "Content-Type": "application/json"},
+        data=payload,
     )
     if status != 403:
         print(f"FAIL apply gate: status={status} want=403")
         failures += 1
     else:
         print("PASS apply gate")
+
+    status, _ = request(
+        "GET",
+        f"{base}/api/v1/discover/movies",
+        headers={"X-Api-Key": key},
+    )
+    if status != 503:
+        print(f"FAIL discover without tmdb: status={status} want=503")
+        failures += 1
+    else:
+        print("PASS discover without tmdb")
 
     if failures:
         print(f"{failures} failure(s)")
