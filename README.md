@@ -35,6 +35,11 @@ Smoke script (ephemeral key if unset): `./scripts/docker-smoke.sh`
   `LISTARR_DATABASE_URL=postgres://listarr:listarr@postgres:5432/listarr?sslmode=disable`,
   then `docker compose --profile postgres up --build`.
 - Reach *arr on the host via `http://host.docker.internal:<port>` (see `.env.docker.example`).
+  - **Docker Desktop:** bridge networking + `extra_hosts: host.docker.internal:host-gateway` is enough.
+  - **Linux rootless:** use host networking override:
+    `docker compose -f compose.yaml -f compose.host.yaml up -d`
+    and ensure `host.docker.internal` resolves on the host (often `127.0.0.1` in `/etc/hosts`),
+    with *arr reachable on those host ports (or a local proxy).
 
 ## Public-repo security
 
