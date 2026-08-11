@@ -29,12 +29,12 @@ func SeedFromEnv(cfg config.Config) (store.Settings, error) {
 		})
 	}
 	return store.Settings{
-		InstanceName:        cfg.InstanceName,
-		SafeMode:            !cfg.ApplyEnabled,
+		InstanceName:         cfg.InstanceName,
+		SafeMode:             !cfg.ApplyEnabled,
 		TorboxSearchPerHour: cfg.TorboxSearchPerHour,
-		TMDBAPIKey:          cfg.TMDBAPIKey,
-		ArrInstances:        arrs,
-		UpdatedAt:           time.Now().UTC(),
+		TMDBAPIKey:           cfg.TMDBAPIKey,
+		ArrInstances:         arrs,
+		UpdatedAt:            time.Now().UTC(),
 	}, nil
 }
 
@@ -114,6 +114,11 @@ func Validate(set store.Settings) error {
 			return fmt.Errorf("arr instance %q: url and apiKey are required", name)
 		}
 	}
+	if plexURL := strings.TrimSpace(set.Plex.ServerURL); plexURL != "" {
+		if !strings.HasPrefix(plexURL, "http://") && !strings.HasPrefix(plexURL, "https://") {
+			return fmt.Errorf("plex.serverUrl must be an absolute http(s) URL")
+		}
+	}
 	return nil
 }
 
@@ -122,6 +127,10 @@ func Normalize(set store.Settings) store.Settings {
 	set.APIKey = strings.TrimSpace(set.APIKey)
 	set.InstanceName = strings.TrimSpace(set.InstanceName)
 	set.TMDBAPIKey = strings.TrimSpace(set.TMDBAPIKey)
+	set.Plex.ServerURL = strings.TrimRight(strings.TrimSpace(set.Plex.ServerURL), "/")
+	set.Plex.Token = strings.TrimSpace(set.Plex.Token)
+	set.Plex.ClientIdentifier = strings.TrimSpace(set.Plex.ClientIdentifier)
+	set.Plex.AccountUsername = strings.TrimSpace(set.Plex.AccountUsername)
 	if set.ArrInstances == nil {
 		set.ArrInstances = []store.ArrInstanceSettings{}
 	}

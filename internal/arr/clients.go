@@ -104,9 +104,12 @@ func (r *Radarr) ExportMovies(ctx context.Context, filter LibraryFilter) ([]Movi
 	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
 		return nil, err
 	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("radarr movie list empty body (check auth cookie / reverse proxy)")
+	}
 	var rows []MovieRef
 	if err := json.Unmarshal(body, &rows); err != nil {
-		return nil, fmt.Errorf("radarr decode movie list: %w", err)
+		return nil, fmt.Errorf("radarr decode movie list: %w (bytes=%d)", err, len(body))
 	}
 	out := make([]MovieRef, 0, len(rows))
 	for _, row := range rows {
@@ -208,9 +211,12 @@ func (s *Sonarr) ExportSeries(ctx context.Context, filter LibraryFilter) ([]Seri
 	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
 		return nil, err
 	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("sonarr series list empty body (check auth cookie / reverse proxy)")
+	}
 	var rows []SeriesRef
 	if err := json.Unmarshal(body, &rows); err != nil {
-		return nil, fmt.Errorf("sonarr decode series list: %w", err)
+		return nil, fmt.Errorf("sonarr decode series list: %w (bytes=%d)", err, len(body))
 	}
 	out := make([]SeriesRef, 0, len(rows))
 	for _, row := range rows {

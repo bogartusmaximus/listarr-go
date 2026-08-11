@@ -25,7 +25,13 @@ func New(timeout time.Duration) *Client {
 		timeout = 15 * time.Second
 	}
 	return &Client{
-		HTTP:    &http.Client{Timeout: timeout},
+		HTTP: &http.Client{
+			Timeout: timeout,
+			// Do not follow redirects: oauth2-proxy login pages often 302→200 HTML.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		Timeout: timeout,
 	}
 }
@@ -41,6 +47,9 @@ func (c *Client) DoJSON(ctx context.Context, method, rawURL string, body io.Read
 			req.Header.Add(k, v)
 		}
 	}
+	if req.Header.Get("Accept") == "" {
+		req.Header.Set("Accept", "application/json")
+	}
 	if c.APIKey != "" && c.Header != "" {
 		req.Header.Set(c.Header, c.APIKey)
 	}
@@ -52,7 +61,7 @@ func (c *Client) DoJSON(ctx context.Context, method, rawURL string, body io.Read
 		return nil, nil, fmt.Errorf("http %s %s: %w", method, redact.URLString(rawURL), err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return resp, nil, fmt.Errorf("read %s: %w", redact.URLString(rawURL), err)
 	}

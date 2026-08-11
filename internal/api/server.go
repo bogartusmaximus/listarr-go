@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bogartusmaximus/listarr-go/internal/appstate"
@@ -44,6 +45,11 @@ func New(rt *appstate.Runtime) *Server {
 	s.mux.HandleFunc("GET /api/v1/arr/instances", s.requireAPIKey(s.handleArrInstances))
 	s.mux.HandleFunc("POST /api/v1/arr/test", s.requireAPIKey(s.handleArrTest))
 	s.mux.HandleFunc("GET /api/v1/arr/{name}/importlists", s.requireAPIKey(s.handleArrImportLists))
+	s.mux.HandleFunc("POST /api/v1/plex/auth/pin", s.requireAPIKey(s.handlePlexPinCreate))
+	s.mux.HandleFunc("GET /api/v1/plex/auth/pin/{id}", s.requireAPIKey(s.handlePlexPinPoll))
+	s.mux.HandleFunc("DELETE /api/v1/plex/auth", s.requireAPIKey(s.handlePlexUnlink))
+	s.mux.HandleFunc("POST /api/v1/plex/test", s.requireAPIKey(s.handlePlexTest))
+	s.mux.HandleFunc("GET /api/v1/plex/libraries", s.requireAPIKey(s.handlePlexLibraries))
 	s.mux.HandleFunc("GET /api/v1/activity", s.requireAPIKey(s.handleActivity))
 	s.mux.HandleFunc("POST /api/v1/sync/preview", s.requireAPIKey(s.handleSyncPreview))
 	s.mux.HandleFunc("POST /api/v1/sync/apply", s.requireAPIKey(s.handleSyncApply))
@@ -136,6 +142,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&set); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid json"})
 		return
+	}
+	prev := view.Settings
+	if strings.TrimSpace(set.Plex.ClientIdentifier) == "" {
+		set.Plex.ClientIdentifier = prev.Plex.ClientIdentifier
+	}
+	if strings.TrimSpace(set.Plex.AccountUsername) == "" && set.Plex.Token == prev.Plex.Token {
+		set.Plex.AccountUsername = prev.Plex.AccountUsername
 	}
 	set = appstate.Normalize(set)
 	if err := appstate.Validate(set); err != nil {

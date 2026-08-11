@@ -157,6 +157,62 @@ paths:
           description: Import lists
         "404":
           description: Unknown instance
+  /api/v1/plex/auth/pin:
+    post:
+      operationId: plexCreatePin
+      summary: Start Plex PIN link (opens plex.tv auth URL)
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: PIN created
+  /api/v1/plex/auth/pin/{id}:
+    get:
+      operationId: plexPollPin
+      summary: Poll Plex PIN; persists token when linked
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: linked true/false
+  /api/v1/plex/auth:
+    delete:
+      operationId: plexUnlink
+      summary: Clear stored Plex auth token
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Unlinked
+  /api/v1/plex/test:
+    post:
+      operationId: plexTest
+      summary: Probe Plex Media Server /identity
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Connection OK
+  /api/v1/plex/libraries:
+    get:
+      operationId: plexLibraries
+      summary: List Plex library folder paths for Sync root folders
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: mediaType
+          in: query
+          schema:
+            type: string
+            enum: [movie, tv]
+      responses:
+        "200":
+          description: Library paths
   /api/v1/discover/movies:
     get:
       operationId: discoverMovies
@@ -222,11 +278,22 @@ components:
         safeMode: { type: boolean, description: "Read-only when true (default)" }
         torboxSearchPerHour: { type: integer, minimum: 1 }
         tmdbApiKey: { type: string }
+        plex:
+          $ref: "#/components/schemas/PlexSettings"
         arrInstances:
           type: array
           items:
             $ref: "#/components/schemas/ArrInstanceSettings"
         updatedAt: { type: string, format: date-time }
+    PlexSettings:
+      type: object
+      properties:
+        serverUrl:
+          type: string
+          example: http://127.0.0.1:32400
+        token: { type: string }
+        clientIdentifier: { type: string }
+        accountUsername: { type: string }
     ArrInstanceSettings:
       type: object
       required: [name, kind, url, apiKey]

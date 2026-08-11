@@ -456,11 +456,32 @@ legend {
   grid-column: 1 / -1;
   display: grid;
   gap: 0.5rem;
+  margin-top: 0.35rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .arr-advanced-body {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.45rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+}
+
+.arr-advanced-body[hidden] {
+  display: none !important;
+}
+
+.plex-pane {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.plex-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
 .settings-form code {
