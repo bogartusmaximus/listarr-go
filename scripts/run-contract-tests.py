@@ -25,7 +25,11 @@ def request(
             body = resp.read()
             if not body:
                 return resp.status, None
-            return resp.status, json.loads(body.decode())
+            text = body.decode(errors="replace")
+            try:
+                return resp.status, json.loads(text)
+            except json.JSONDecodeError:
+                return resp.status, text
     except urllib.error.HTTPError as exc:
         raw = exc.read()
         try:
@@ -52,7 +56,7 @@ def main() -> int:
         print("PASS health")
 
     status, body = request("GET", f"{base}/")
-    if status != 200:
+    if status != 200 or not isinstance(body, str) or "listarr-go" not in body:
         print(f"FAIL ui index: status={status}")
         failures += 1
     else:
