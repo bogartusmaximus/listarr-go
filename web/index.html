@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>listarr-go</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;560;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+  <header class="top">
+    <div class="brand-block">
+      <p class="eyebrow">preview / apply tool</p>
+      <h1 class="brand">listarr-go</h1>
+      <p class="tagline">Sync and discover into Radarr/Sonarr — preview first, mutate only when you opt in.</p>
+    </div>
+    <div class="auth" id="auth">
+      <label class="field">
+        <span>API key</span>
+        <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="LISTARR_API_KEY" />
+      </label>
+      <button type="button" class="btn primary" id="btnConnect">Connect</button>
+      <p class="hint" id="authHint">Stored in this browser only (sessionStorage).</p>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" class="tab active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
+    <button type="button" class="tab" data-tab="sync" role="tab" aria-selected="false">Sync</button>
+    <button type="button" class="tab" data-tab="discover" role="tab" aria-selected="false">Discover</button>
+    <button type="button" class="tab" data-tab="activity" role="tab" aria-selected="false">Activity</button>
+  </nav>
+
+  <main>
+    <section class="panel active" id="panel-overview" data-panel="overview">
+      <h2>System</h2>
+      <p class="lede">Live status from the running instance. URLs and keys never appear here.</p>
+      <dl class="status-grid" id="statusGrid">
+        <div><dt>Connection</dt><dd id="stConnection">not connected</dd></div>
+        <div><dt>Version</dt><dd id="stVersion">—</dd></div>
+        <div><dt>Apply</dt><dd id="stApply">—</dd></div>
+        <div><dt>Search budget</dt><dd id="stBudget">—</dd></div>
+        <div><dt>Store</dt><dd id="stStore">—</dd></div>
+        <div><dt>TMDB</dt><dd id="stTmdb">—</dd></div>
+      </dl>
+      <h3>Named *arr instances</h3>
+      <ul class="instance-list" id="instanceList"></ul>
+    </section>
+
+    <section class="panel" id="panel-sync" data-panel="sync" hidden>
+      <h2>Library sync</h2>
+      <p class="lede">Build a preview against a source library, then apply only when enabled.</p>
+      <form id="syncForm" class="sync-form">
+        <fieldset>
+          <legend>Source</legend>
+          <label class="field">
+            <span>Source type</span>
+            <select name="source" id="syncSource">
+              <option value="arr-library" selected>arr-library</option>
+              <option value="tmdb">tmdb</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Media</span>
+            <select name="mediaType" id="syncMedia">
+              <option value="movie">movie</option>
+              <option value="tv">tv</option>
+            </select>
+          </label>
+          <label class="field" id="wrapSourceInstance">
+            <span>Source instance</span>
+            <select name="sourceInstance" id="syncSourceInstance"></select>
+          </label>
+          <label class="field check">
+            <input type="checkbox" name="monitoredOnly" id="syncMonitored" checked />
+            <span>Monitored only</span>
+          </label>
+          <label class="field">
+            <span>Tag IDs (comma-separated)</span>
+            <input type="text" name="tagIds" id="syncTagIds" placeholder="1,2" />
+          </label>
+          <label class="field">
+            <span>Path contains</span>
+            <input type="text" name="pathContains" id="syncPath" placeholder="/movies-torbox" />
+          </label>
+          <label class="field" id="wrapTmdbIds" hidden>
+            <span>TMDB IDs (comma-separated)</span>
+            <input type="text" name="tmdbIds" id="syncTmdbIds" placeholder="550,1396" />
+          </label>
+          <label class="field">
+            <span>Max items</span>
+            <input type="number" name="maxItems" id="syncMax" min="1" max="2000" value="100" />
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Target</legend>
+          <label class="field">
+            <span>Target instance</span>
+            <select name="targetInstance" id="syncTargetInstance"></select>
+          </label>
+          <label class="field">
+            <span>Root folder path</span>
+            <input type="text" name="rootFolderPath" id="syncRoot" required placeholder="/data/movies" />
+          </label>
+          <label class="field">
+            <span>Quality profile ID</span>
+            <input type="number" name="qualityProfileId" id="syncQP" required min="1" value="1" />
+          </label>
+          <label class="field">
+            <span>Target tags (comma-separated)</span>
+            <input type="text" name="targetTags" id="syncTargetTags" />
+          </label>
+          <label class="field check">
+            <input type="checkbox" name="monitored" id="syncTargetMonitored" checked />
+            <span>Monitored</span>
+          </label>
+          <label class="field check">
+            <input type="checkbox" name="searchOnAdd" id="syncSearchOnAdd" checked />
+            <span>Search on add</span>
+          </label>
+          <label class="field check">
+            <input type="checkbox" name="seasonFolder" id="syncSeasonFolder" />
+            <span>Season folder (tv)</span>
+          </label>
+        </fieldset>
+        <div class="actions">
+          <button type="submit" class="btn primary" id="btnPreview">Preview</button>
+          <button type="button" class="btn danger" id="btnApply" disabled>Apply</button>
+          <p class="hint" id="applyHint">Apply stays locked until the server has LISTARR_APPLY=1.</p>
+        </div>
+      </form>
+      <div class="result-meta" id="syncMeta" hidden></div>
+      <div class="table-wrap" id="syncResultsWrap" hidden>
+        <table class="results" id="syncResults">
+          <thead>
+            <tr><th>Title</th><th>TMDB</th><th>Action</th><th>Detail</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-discover" data-panel="discover" hidden>
+      <h2>TMDB discover</h2>
+      <p class="lede">Browse discover results when LISTARR_TMDB_API_KEY is configured.</p>
+      <form id="discoverForm" class="inline-form">
+        <label class="field">
+          <span>Media</span>
+          <select id="discoverMedia">
+            <option value="movie">movies</option>
+            <option value="tv">tv</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Sort</span>
+          <input type="text" id="discoverSort" value="popularity.desc" />
+        </label>
+        <label class="field">
+          <span>Page</span>
+          <input type="number" id="discoverPage" min="1" value="1" />
+        </label>
+        <button type="submit" class="btn primary">Discover</button>
+      </form>
+      <div class="table-wrap" id="discoverWrap" hidden>
+        <table class="results" id="discoverResults">
+          <thead>
+            <tr><th>Title</th><th>TMDB</th><th>Year</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-activity" data-panel="activity" hidden>
+      <h2>Activity</h2>
+      <p class="lede">Recent sync runs from the configured store backend.</p>
+      <button type="button" class="btn" id="btnRefreshActivity">Refresh</button>
+      <div class="table-wrap" id="activityWrap" hidden>
+        <table class="results" id="activityResults">
+          <thead>
+            <tr>
+              <th>When</th><th>Mode</th><th>Source</th><th>Media</th>
+              <th>From → To</th><th>Adds</th><th>Skips</th><th>Errors</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span id="footVersion">listarr-go</span>
+    <span>Inspired by fisherd80/Listarr · MIT</span>
+  </footer>
+  <div class="toast" id="toast" hidden role="status"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
