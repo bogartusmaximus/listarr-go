@@ -68,11 +68,28 @@ def main() -> int:
         or not isinstance(body, dict)
         or body.get("appName") != "listarr-go"
         or body.get("applyEnabled") is not False
+        or body.get("storeBackend") != "polars"
     ):
         print(f"FAIL status auth: status={status} body={body}")
         failures += 1
     else:
         print("PASS status auth")
+
+    status, body = request(
+        "GET",
+        f"{base}/api/v1/activity",
+        headers={"X-Api-Key": key},
+    )
+    if (
+        status != 200
+        or not isinstance(body, dict)
+        or body.get("backend") != "polars"
+        or not isinstance(body.get("runs"), list)
+    ):
+        print(f"FAIL activity: status={status} body={body}")
+        failures += 1
+    else:
+        print("PASS activity")
 
     payload = json.dumps(
         {

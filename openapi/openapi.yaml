@@ -4,7 +4,7 @@ info:
   description: |
     Public listarr-go API. Inspired by fisherd80/Listarr (MIT).
     Safe defaults: loopback listen, apply opt-in, no private host defaults.
-  version: 0.3.0
+  version: 0.4.0
 servers:
   - url: http://127.0.0.1:8787
     description: Local loopback (default)
@@ -22,7 +22,26 @@ paths:
         - ApiKeyHeader: []
       responses:
         "200":
-          description: Status
+          description: Status (includes storeBackend)
+  /api/v1/activity:
+    get:
+      operationId: listActivity
+      summary: Recent persisted sync runs
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        "200":
+          description: Activity list
+        "503":
+          description: Store not configured
   /api/v1/arr/instances:
     get:
       operationId: listArrInstances

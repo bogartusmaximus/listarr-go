@@ -11,6 +11,7 @@ const (
 	DefaultListen            = "127.0.0.1:8787"
 	DefaultInstanceName      = "listarr"
 	DefaultTorboxSearchPerHr = 60
+	DefaultStoreBackend      = "polars"
 )
 
 // Config is process configuration loaded from the environment.
@@ -22,6 +23,9 @@ type Config struct {
 	ApplyEnabled        bool
 	TorboxSearchPerHour int
 	TMDBAPIKey          string
+	StoreBackend        string
+	DatabaseURL         string
+	PolarsDir           string
 }
 
 // Load reads environment variables and validates required fields.
@@ -46,6 +50,18 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	backend := strings.ToLower(strings.TrimSpace(os.Getenv("LISTARR_STORE_BACKEND")))
+	if backend == "" {
+		backend = DefaultStoreBackend
+	}
+
+	dbURL := strings.TrimSpace(os.Getenv("LISTARR_DATABASE_URL"))
+	if dbURL == "" {
+		dbURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	}
+
+	polarsDir := strings.TrimSpace(os.Getenv("LISTARR_POLARS_DIR"))
+
 	return Config{
 		APIKey:              apiKey,
 		Listen:              listen,
@@ -53,6 +69,9 @@ func Load() (Config, error) {
 		ApplyEnabled:        os.Getenv("LISTARR_APPLY") == "1",
 		TorboxSearchPerHour: perHour,
 		TMDBAPIKey:          strings.TrimSpace(os.Getenv("LISTARR_TMDB_API_KEY")),
+		StoreBackend:        backend,
+		DatabaseURL:         dbURL,
+		PolarsDir:           polarsDir,
 	}, nil
 }
 

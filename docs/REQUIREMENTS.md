@@ -12,6 +12,7 @@ A standalone Go preview/apply tool that:
 2. **Imports from Radarr/Sonarr libraries** (and, next, any *arr Import List–shaped sources)
 3. Applies into one or more Radarr/Sonarr targets — including **keeping a local and an external *arr pair in sync**
 4. Rate-limits TorBox-oriented `searchOnAdd` (default **60/hour**)
+5. Persists sync activity via a pluggable store (**Postgres** for production, **Polars/CSV** for tests; SQLite/MySQL stubbed for community)
 
 Forever a **tool**, never a forced replacement of *arr native Import Lists.
 
@@ -32,6 +33,7 @@ reference instance **names** only — URLs/keys never appear in sync JSON.
 | Order | Intent | Status |
 |-------|--------|--------|
 | 1st | Dual Radarr + dual Sonarr library sync | **v0.3** (`source=arr-library`) |
+| 1st | Persist sync activity (postgres + polars) | **v0.4** |
 | 2nd | Treat *arr **Import Lists** as named sources (tag filters today; list-item fetch next) | Metadata API now; item fetch follows |
 | 3rd | Any *arr family (Lidarr, …) behind the same registry + sync contracts | Kind enum ready; clients later |
 | 3rd | Seerr as both catalog IO and request/pipeline control plane | Phase 2–3 |
@@ -51,6 +53,7 @@ titles” when lists stamp tags on add.
 | TorBox search-on-add | On, default **60 / rolling hour** |
 | Instances | Named registry; no private URL defaults |
 | Secrets | Env only; status endpoints never echo URLs/keys |
+| Persistence | Multi-backend store: `postgres` + `polars` first; `sqlite`/`mysql` stubs |
 
 ## Phases
 
@@ -58,7 +61,8 @@ titles” when lists stamp tags on add.
 |-------|--------|
 | 0–1a | Health/status, apply gate, rate limiter |
 | 1b | TMDB discover + single-target *arr apply |
-| **1c** | **Named *arr registry + arr-library dual-instance sync** — **current** |
+| 1c | Named *arr registry + arr-library dual-instance sync |
+| **1d** | **Store backends (polars default, postgres, sqlite/mysql stub) + `/api/v1/activity`** — **current** |
 | 2 | IMDB + Seerr import/export; Import List item fetch |
 | 3 | Seerr add/delete + pipeline trigger |
 | 4 | UI parity + optional MCP |
