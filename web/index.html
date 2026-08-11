@@ -20,10 +20,10 @@
     <div class="auth" id="auth">
       <label class="field">
         <span>API key</span>
-        <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="LISTARR_API_KEY" />
+        <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="API key from startup logs" />
       </label>
       <button type="button" class="btn primary" id="btnConnect">Connect</button>
-      <p class="hint" id="authHint">Stored in this browser only (sessionStorage).</p>
+      <p class="hint" id="authHint">First boot prints the API key in server logs; then it lives in Settings.</p>
     </div>
   </header>
 
@@ -208,7 +208,9 @@
               <input type="password" id="setApiKey" required autocomplete="off" spellcheck="false" />
               <button type="button" class="btn" data-toggle-secret="setApiKey">Show</button>
               <button type="button" class="btn" data-copy-secret="setApiKey">Copy</button>
+              <button type="button" class="btn" id="btnRegenApiKey">Regenerate</button>
             </div>
+            <p class="hint">Regenerate fills a new key — click Save settings to apply.</p>
           </label>
           <label class="field check">
             <input type="checkbox" id="setApply" />

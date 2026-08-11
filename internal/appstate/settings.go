@@ -12,6 +12,7 @@ import (
 )
 
 // SeedFromEnv builds Settings from process env (used when the store is empty).
+// API key is never taken from env — callers must set it (usually via GenerateAPIKey).
 func SeedFromEnv(cfg config.Config) (store.Settings, error) {
 	instances, err := arr.InstancesFromEnv()
 	if err != nil {
@@ -27,7 +28,6 @@ func SeedFromEnv(cfg config.Config) (store.Settings, error) {
 		})
 	}
 	return store.Settings{
-		APIKey:              cfg.APIKey,
 		InstanceName:        cfg.InstanceName,
 		ApplyEnabled:        cfg.ApplyEnabled,
 		TorboxSearchPerHour: cfg.TorboxSearchPerHour,
@@ -38,31 +38,50 @@ func SeedFromEnv(cfg config.Config) (store.Settings, error) {
 }
 
 // LoadOrSeed returns store settings, seeding from env when missing.
-func LoadOrSeed(ctx context.Context, st store.Store, cfg config.Config) (store.Settings, error) {
+// The second return value is true when a new API key was generated (log it once).
+func LoadOrSeed(ctx context.Context, st store.Store, cfg config.Config) (store.Settings, bool, error) {
 	set, found, err := st.GetSettings(ctx)
 	if err != nil {
-		return store.Settings{}, err
+		return store.Settings{}, false, err
 	}
 	if found {
 		if set.ArrInstances == nil {
 			set.ArrInstances = []store.ArrInstanceSettings{}
 		}
-		return set, nil
+		if strings.TrimSpace(set.APIKey) != "" {
+			return set, false, nil
+		}
+		key, err := GenerateAPIKey()
+		if err != nil {
+			return store.Settings{}, false, err
+		}
+		set.APIKey = key
+		set.UpdatedAt = time.Now().UTC()
+		if err := Validate(set); err != nil {
+			return store.Settings{}, false, err
+		}
+		if err := st.PutSettings(ctx, set); err != nil {
+			return store.Settings{}, false, err
+		}
+		return set, true, nil
 	}
+
 	seed, err := SeedFromEnv(cfg)
 	if err != nil {
-		return store.Settings{}, err
+		return store.Settings{}, false, err
 	}
-	if strings.TrimSpace(seed.APIKey) == "" {
-		return store.Settings{}, fmt.Errorf("LISTARR_API_KEY is required to seed an empty settings store")
+	key, err := GenerateAPIKey()
+	if err != nil {
+		return store.Settings{}, false, err
 	}
+	seed.APIKey = key
 	if err := Validate(seed); err != nil {
-		return store.Settings{}, err
+		return store.Settings{}, false, err
 	}
 	if err := st.PutSettings(ctx, seed); err != nil {
-		return store.Settings{}, err
+		return store.Settings{}, false, err
 	}
-	return seed, nil
+	return seed, true, nil
 }
 
 // Validate checks operator settings before persist / apply.

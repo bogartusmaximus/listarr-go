@@ -6,27 +6,7 @@ import (
 	"github.com/bogartusmaximus/listarr-go/internal/config"
 )
 
-func TestLoadAllowsEmptyAPIKey(t *testing.T) {
-	t.Setenv("LISTARR_API_KEY", "")
-	t.Setenv("LISTARR_LISTEN", "")
-	t.Setenv("LISTARR_INSTANCE_NAME", "")
-	t.Setenv("LISTARR_APPLY", "")
-	t.Setenv("LISTARR_TORBOX_SEARCH_PER_HOUR", "")
-	t.Setenv("LISTARR_STORE_BACKEND", "")
-	t.Setenv("LISTARR_DATABASE_URL", "")
-	t.Setenv("DATABASE_URL", "")
-	t.Setenv("LISTARR_POLARS_DIR", "")
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.APIKey != "" {
-		t.Fatalf("apiKey=%q", cfg.APIKey)
-	}
-}
-
 func TestLoadDefaults(t *testing.T) {
-	t.Setenv("LISTARR_API_KEY", "test-key")
 	t.Setenv("LISTARR_LISTEN", "")
 	t.Setenv("LISTARR_INSTANCE_NAME", "")
 	t.Setenv("LISTARR_APPLY", "")
@@ -43,6 +23,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Listen != config.DefaultListen {
 		t.Fatalf("listen=%q", cfg.Listen)
 	}
+	if cfg.InstanceName != config.DefaultInstanceName {
+		t.Fatalf("instance=%q", cfg.InstanceName)
+	}
 	if cfg.ApplyEnabled {
 		t.Fatal("apply must default off")
 	}
@@ -54,8 +37,18 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadInstanceNameFromEnv(t *testing.T) {
+	t.Setenv("LISTARR_INSTANCE_NAME", "homelab")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.InstanceName != "homelab" {
+		t.Fatalf("instance=%q", cfg.InstanceName)
+	}
+}
+
 func TestLoadApplyOptIn(t *testing.T) {
-	t.Setenv("LISTARR_API_KEY", "test-key")
 	t.Setenv("LISTARR_APPLY", "1")
 	cfg, err := config.Load()
 	if err != nil {

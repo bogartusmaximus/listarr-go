@@ -34,11 +34,16 @@ func main() {
 	defer func() { _ = st.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	settings, err := appstate.LoadOrSeed(ctx, st, cfg)
+	settings, generatedKey, err := appstate.LoadOrSeed(ctx, st, cfg)
 	cancel()
 	if err != nil {
 		slog.Error("settings", "err", err)
 		os.Exit(1)
+	}
+	if generatedKey {
+		slog.Warn("generated initial API key — copy from logs or Settings after connect",
+			"apiKey", settings.APIKey,
+		)
 	}
 
 	budget := ratelimit.NewHourlyBudget(settings.TorboxSearchPerHour)

@@ -52,7 +52,7 @@ titles” when lists stamp tags on add.
 | Stance | Preview/apply tool forever |
 | TorBox search-on-add | On, default **60 / rolling hour** |
 | Instances | Named registry; no private URL defaults |
-| Secrets | Bootstrap env (`LISTEN`, store backend/DSN); operator secrets seed store then live there; authenticated Settings API/UI may show them |
+| Secrets | Bootstrap env (`LISTEN`, store backend/DSN); API key auto-generated into store; authenticated Settings API/UI may show secrets |
 | Persistence | Multi-backend store: `postgres` + `polars` first; `sqlite`/`mysql` stubs |
 
 ## Phases

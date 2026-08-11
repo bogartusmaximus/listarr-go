@@ -5,21 +5,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ -z "${LISTARR_API_KEY:-}" ]]; then
-  if [[ -f .env ]]; then
-    # shellcheck disable=SC1091
-    set -a
-    # shellcheck disable=SC1091
-    source .env
-    set +a
-  fi
-fi
-if [[ -z "${LISTARR_API_KEY:-}" ]]; then
-  LISTARR_API_KEY="docker-smoke-$(date +%s)-$RANDOM"
-  export LISTARR_API_KEY
-  echo "Using ephemeral LISTARR_API_KEY for this smoke run"
-fi
-
 docker compose up --build -d
 trap 'docker compose down' EXIT
 
@@ -34,6 +19,15 @@ done
 if [[ "$ok" != 1 ]]; then
   docker compose logs --no-color listarr | tail -50
   echo "FAIL: health never became ready"
+  exit 1
+fi
+
+LISTARR_API_KEY="$(
+  docker compose exec -T listarr cat /data/polars/settings.json \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["apiKey"])'
+)"
+if [[ -z "${LISTARR_API_KEY}" ]]; then
+  echo "FAIL: could not read apiKey from settings.json"
   exit 1
 fi
 
