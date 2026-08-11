@@ -32,6 +32,7 @@
     <button type="button" class="tab" data-tab="sync" role="tab" aria-selected="false">Sync</button>
     <button type="button" class="tab" data-tab="discover" role="tab" aria-selected="false">Discover</button>
     <button type="button" class="tab" data-tab="activity" role="tab" aria-selected="false">Activity</button>
+    <button type="button" class="tab" data-tab="settings" role="tab" aria-selected="false">Settings</button>
   </nav>
 
   <main>
@@ -129,7 +130,7 @@
         <div class="actions">
           <button type="submit" class="btn primary" id="btnPreview">Preview</button>
           <button type="button" class="btn danger" id="btnApply" disabled>Apply</button>
-          <p class="hint" id="applyHint">Apply stays locked until the server has LISTARR_APPLY=1.</p>
+          <p class="hint" id="applyHint">Apply stays locked until enabled in Settings.</p>
         </div>
       </form>
       <div class="result-meta" id="syncMeta" hidden></div>
@@ -145,7 +146,7 @@
 
     <section class="panel" id="panel-discover" data-panel="discover" hidden>
       <h2>TMDB discover</h2>
-      <p class="lede">Browse discover results when LISTARR_TMDB_API_KEY is configured.</p>
+      <p class="lede">Browse discover results when a TMDB API key is configured in Settings.</p>
       <form id="discoverForm" class="inline-form">
         <label class="field">
           <span>Media</span>
@@ -189,6 +190,54 @@
           <tbody></tbody>
         </table>
       </div>
+    </section>
+
+    <section class="panel" id="panel-settings" data-panel="settings" hidden>
+      <h2>Settings</h2>
+      <p class="lede">Seeded once from <code>.env</code>, then stored in the datastore. Secrets are visible to authenticated operators.</p>
+      <form id="settingsForm" class="settings-form">
+        <fieldset>
+          <legend>General</legend>
+          <label class="field">
+            <span>Instance name</span>
+            <input type="text" id="setInstanceName" required />
+          </label>
+          <label class="field secret-field">
+            <span>API key</span>
+            <div class="secret-row">
+              <input type="password" id="setApiKey" required autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn" data-toggle-secret="setApiKey">Show</button>
+              <button type="button" class="btn" data-copy-secret="setApiKey">Copy</button>
+            </div>
+          </label>
+          <label class="field check">
+            <input type="checkbox" id="setApply" />
+            <span>Enable apply (mutations)</span>
+          </label>
+          <label class="field">
+            <span>TorBox search per hour</span>
+            <input type="number" id="setTorbox" min="1" required value="60" />
+          </label>
+          <label class="field secret-field">
+            <span>TMDB API key</span>
+            <div class="secret-row">
+              <input type="password" id="setTmdb" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn" data-toggle-secret="setTmdb">Show</button>
+              <button type="button" class="btn" data-copy-secret="setTmdb">Copy</button>
+            </div>
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Named *arr instances</legend>
+          <p class="hint">URLs and keys are stored in the datastore (not committed). Add local/remote pairs for sync.</p>
+          <div id="arrInstances" class="arr-instances"></div>
+          <button type="button" class="btn" id="btnAddArr">Add instance</button>
+        </fieldset>
+        <div class="actions">
+          <button type="submit" class="btn primary" id="btnSaveSettings">Save settings</button>
+          <p class="hint" id="settingsHint">Changes apply immediately (listen / store backend still require restart via env).</p>
+        </div>
+      </form>
     </section>
   </main>
 

@@ -102,6 +102,22 @@ def main() -> int:
     else:
         print("PASS activity")
 
+    status, body = request(
+        "GET",
+        f"{base}/api/v1/settings",
+        headers={"X-Api-Key": key},
+    )
+    if (
+        status != 200
+        or not isinstance(body, dict)
+        or body.get("apiKey") != key
+        or not isinstance(body.get("arrInstances"), list)
+    ):
+        print(f"FAIL settings get: status={status} body={body}")
+        failures += 1
+    else:
+        print("PASS settings get")
+
     payload = json.dumps(
         {
             "source": "tmdb",

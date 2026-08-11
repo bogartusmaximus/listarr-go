@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,10 +13,12 @@ import (
 )
 
 // polarsStore keeps runs in memory and mirrors them to CSV for Polars tests.
+// Operator settings live in settings.json alongside the CSV dump.
 type polarsStore struct {
-	dir  string
-	mu   sync.Mutex
-	runs []SyncRun
+	dir      string
+	mu       sync.Mutex
+	runs     []SyncRun
+	settings *Settings
 }
 
 func openPolars(dir string) (Store, error) {
@@ -29,7 +32,78 @@ func openPolars(dir string) (Store, error) {
 	if err := s.loadCSV(); err != nil {
 		return nil, err
 	}
+	if err := s.loadSettings(); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+func (s *polarsStore) settingsPath() string {
+	return filepath.Join(s.dir, "settings.json")
+}
+
+func (s *polarsStore) loadSettings() error {
+	path := s.settingsPath()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var set Settings
+	if err := json.Unmarshal(raw, &set); err != nil {
+		return fmt.Errorf("polars settings: %w", err)
+	}
+	s.settings = &set
+	return nil
+}
+
+func (s *polarsStore) GetSettings(_ context.Context) (Settings, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.settings == nil {
+		return Settings{}, false, nil
+	}
+	return cloneSettings(*s.settings), true, nil
+}
+
+func (s *polarsStore) PutSettings(_ context.Context, settings Settings) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if settings.UpdatedAt.IsZero() {
+		settings.UpdatedAt = time.Now().UTC()
+	}
+	if settings.ArrInstances == nil {
+		settings.ArrInstances = []ArrInstanceSettings{}
+	}
+	path := s.settingsPath()
+	tmp := path + ".tmp"
+	raw, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	if err := os.WriteFile(tmp, raw, 0o640); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	cp := cloneSettings(settings)
+	s.settings = &cp
+	return nil
+}
+
+func cloneSettings(in Settings) Settings {
+	out := in
+	if in.ArrInstances == nil {
+		out.ArrInstances = []ArrInstanceSettings{}
+		return out
+	}
+	out.ArrInstances = make([]ArrInstanceSettings, len(in.ArrInstances))
+	copy(out.ArrInstances, in.ArrInstances)
+	return out
 }
 
 func (s *polarsStore) Backend() Backend { return BackendPolars }

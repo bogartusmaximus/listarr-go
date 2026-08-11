@@ -15,7 +15,8 @@ const (
 )
 
 // Config is process configuration loaded from the environment.
-// *arr instances are loaded separately via arr.LoadRegistryFromEnv.
+// Operator settings (API key, *arr instances, …) seed the store on first boot;
+// listen address and store backend remain env-only.
 type Config struct {
 	APIKey              string
 	Listen              string
@@ -28,12 +29,11 @@ type Config struct {
 	PolarsDir           string
 }
 
-// Load reads environment variables and validates required fields.
+// Load reads environment variables used for bootstrap and first-boot seed.
+// LISTARR_API_KEY is required only when the store has no settings yet
+// (enforced by appstate.LoadOrSeed).
 func Load() (Config, error) {
 	apiKey := strings.TrimSpace(os.Getenv("LISTARR_API_KEY"))
-	if apiKey == "" {
-		return Config{}, fmt.Errorf("LISTARR_API_KEY is required")
-	}
 
 	listen := strings.TrimSpace(os.Getenv("LISTARR_LISTEN"))
 	if listen == "" {

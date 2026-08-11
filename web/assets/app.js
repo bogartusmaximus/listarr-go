@@ -111,7 +111,7 @@
     ul.innerHTML = "";
     if (!state.instances.length) {
       const li = document.createElement("li");
-      li.textContent = "No named instances yet — set LISTARR_ARR_* env vars.";
+      li.textContent = "No named instances yet — configure them in Settings.";
       ul.appendChild(li);
       return;
     }
@@ -127,7 +127,108 @@
     $("btnApply").disabled = !state.applyEnabled || !state.lastSyncPayload;
     $("applyHint").textContent = state.applyEnabled
       ? "Apply will mutate the target *arr. Preview first."
-      : "Apply stays locked until the server has LISTARR_APPLY=1.";
+      : "Apply stays locked until enabled in Settings.";
+  }
+
+  function arrRow(inst = {}) {
+    const row = document.createElement("div");
+    row.className = "arr-row";
+    const name = escapeHtml(inst.name || "");
+    const url = escapeHtml(inst.url || "");
+    const apiKey = escapeHtml(inst.apiKey || "");
+    const kind = inst.kind === "sonarr" ? "sonarr" : "radarr";
+    row.innerHTML = `
+      <label class="field"><span>Name</span><input type="text" class="arr-name" value="${name}" placeholder="local" required /></label>
+      <label class="field"><span>Kind</span>
+        <select class="arr-kind">
+          <option value="radarr"${kind === "radarr" ? " selected" : ""}>radarr</option>
+          <option value="sonarr"${kind === "sonarr" ? " selected" : ""}>sonarr</option>
+        </select>
+      </label>
+      <label class="field"><span>URL</span><input type="url" class="arr-url" value="${url}" placeholder="http://127.0.0.1:7878" required /></label>
+      <label class="field secret-field"><span>API key</span>
+        <div class="secret-row">
+          <input type="password" class="arr-key" value="${apiKey}" autocomplete="off" spellcheck="false" required />
+          <button type="button" class="btn arr-toggle">Show</button>
+          <button type="button" class="btn arr-copy">Copy</button>
+        </div>
+      </label>
+      <button type="button" class="btn danger arr-remove">Remove</button>
+    `;
+    row.querySelector(".arr-remove").addEventListener("click", () => row.remove());
+    row.querySelector(".arr-toggle").addEventListener("click", (ev) => {
+      const input = row.querySelector(".arr-key");
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      ev.currentTarget.textContent = show ? "Hide" : "Show";
+    });
+    row.querySelector(".arr-copy").addEventListener("click", async () => {
+      const input = row.querySelector(".arr-key");
+      try {
+        await navigator.clipboard.writeText(input.value || "");
+        toast("Copied");
+      } catch {
+        toast("Copy failed");
+      }
+    });
+    return row;
+  }
+
+  function renderSettings(set) {
+    $("setInstanceName").value = set.instanceName || "";
+    $("setApiKey").value = set.apiKey || "";
+    $("setApply").checked = Boolean(set.applyEnabled);
+    $("setTorbox").value = set.torboxSearchPerHour || 60;
+    $("setTmdb").value = set.tmdbApiKey || "";
+    const wrap = $("arrInstances");
+    wrap.innerHTML = "";
+    const list = set.arrInstances || [];
+    if (!list.length) {
+      wrap.appendChild(arrRow());
+    } else {
+      for (const inst of list) wrap.appendChild(arrRow(inst));
+    }
+  }
+
+  function collectSettings() {
+    const arrInstances = [];
+    for (const row of $("arrInstances").querySelectorAll(".arr-row")) {
+      const name = row.querySelector(".arr-name").value.trim();
+      const url = row.querySelector(".arr-url").value.trim();
+      const apiKey = row.querySelector(".arr-key").value.trim();
+      const kind = row.querySelector(".arr-kind").value;
+      if (!name && !url && !apiKey) continue;
+      arrInstances.push({ name, kind, url, apiKey });
+    }
+    return {
+      apiKey: $("setApiKey").value.trim(),
+      instanceName: $("setInstanceName").value.trim(),
+      applyEnabled: $("setApply").checked,
+      torboxSearchPerHour: Number($("setTorbox").value) || 60,
+      tmdbApiKey: $("setTmdb").value.trim(),
+      arrInstances,
+    };
+  }
+
+  async function loadSettings() {
+    const set = await api("/api/v1/settings");
+    renderSettings(set);
+  }
+
+  async function saveSettings(ev) {
+    ev.preventDefault();
+    const payload = collectSettings();
+    const saved = await api("/api/v1/settings", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    if (saved.apiKey) {
+      $("apiKey").value = saved.apiKey;
+      saveKey();
+    }
+    renderSettings(saved);
+    await connect();
+    toast("Settings saved");
   }
 
   async function connect() {
@@ -264,6 +365,9 @@
     if (name === "activity" && apiKey()) {
       loadActivity().catch((err) => toast(err.message));
     }
+    if (name === "settings" && apiKey()) {
+      loadSettings().catch((err) => toast(err.message));
+    }
   }
 
   function wire() {
@@ -296,6 +400,32 @@
     $("btnRefreshActivity").addEventListener("click", () => {
       loadActivity().catch((err) => toast(err.message));
     });
+    $("btnAddArr").addEventListener("click", () => {
+      $("arrInstances").appendChild(arrRow());
+    });
+    $("settingsForm").addEventListener("submit", (ev) => {
+      saveSettings(ev).catch((err) => toast(err.message));
+    });
+    for (const btn of document.querySelectorAll("[data-toggle-secret]")) {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-toggle-secret");
+        const input = $(id);
+        const show = input.type === "password";
+        input.type = show ? "text" : "password";
+        btn.textContent = show ? "Hide" : "Show";
+      });
+    }
+    for (const btn of document.querySelectorAll("[data-copy-secret]")) {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-copy-secret");
+        try {
+          await navigator.clipboard.writeText($(id).value || "");
+          toast("Copied");
+        } catch {
+          toast("Copy failed");
+        }
+      });
+    }
     if (apiKey()) {
       connect().catch(() => {
         $("authHint").textContent = "Saved key present — click Connect.";

@@ -29,7 +29,42 @@ paths:
         - ApiKeyHeader: []
       responses:
         "200":
-          description: Status (includes storeBackend)
+          description: Status (includes storeBackend; no secrets)
+  /api/v1/settings:
+    get:
+      operationId: getSettings
+      summary: Operator settings (includes secrets for authenticated clients)
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Settings document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    put:
+      operationId: putSettings
+      summary: Update settings, persist to store, hot-reload runtime
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Settings"
+      responses:
+        "200":
+          description: Saved settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        "400":
+          description: Validation error
+        "503":
+          description: Store not configured
   /api/v1/activity:
     get:
       operationId: listActivity
@@ -129,6 +164,32 @@ components:
       in: header
       name: X-Api-Key
   schemas:
+    Settings:
+      type: object
+      required: [apiKey, instanceName, torboxSearchPerHour]
+      properties:
+        apiKey: { type: string }
+        instanceName: { type: string }
+        applyEnabled: { type: boolean }
+        torboxSearchPerHour: { type: integer, minimum: 1 }
+        tmdbApiKey: { type: string }
+        arrInstances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArrInstanceSettings"
+        updatedAt: { type: string, format: date-time }
+    ArrInstanceSettings:
+      type: object
+      required: [name, kind, url, apiKey]
+      properties:
+        name: { type: string }
+        kind:
+          type: string
+          enum: [radarr, sonarr]
+        url:
+          type: string
+          example: http://127.0.0.1:7878
+        apiKey: { type: string }
     SyncRequest:
       type: object
       required: [source, mediaType, target]

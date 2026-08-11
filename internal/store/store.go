@@ -31,6 +31,25 @@ type SyncRun struct {
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
+// ArrInstanceSettings is one named *arr target stored in settings.
+type ArrInstanceSettings struct {
+	Name   string `json:"name"`
+	Kind   string `json:"kind"` // radarr|sonarr
+	URL    string `json:"url"`
+	APIKey string `json:"apiKey"`
+}
+
+// Settings is the operator configuration document (SoT after first seed).
+type Settings struct {
+	APIKey              string                `json:"apiKey"`
+	InstanceName        string                `json:"instanceName"`
+	ApplyEnabled        bool                  `json:"applyEnabled"`
+	TorboxSearchPerHour int                   `json:"torboxSearchPerHour"`
+	TMDBAPIKey          string                `json:"tmdbApiKey"`
+	ArrInstances        []ArrInstanceSettings `json:"arrInstances"`
+	UpdatedAt           time.Time             `json:"updatedAt"`
+}
+
 // Store is the durable (or test) persistence surface.
 type Store interface {
 	Backend() Backend
@@ -38,6 +57,8 @@ type Store interface {
 	Ping(ctx context.Context) error
 	SaveSyncRun(ctx context.Context, run SyncRun) error
 	ListSyncRuns(ctx context.Context, limit int) ([]SyncRun, error)
+	GetSettings(ctx context.Context) (Settings, bool, error)
+	PutSettings(ctx context.Context, settings Settings) error
 }
 
 // Config selects and configures a backend. No private host defaults.

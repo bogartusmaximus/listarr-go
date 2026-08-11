@@ -395,6 +395,51 @@ legend {
   animation: rise 0.3s var(--ease) both;
 }
 
+.settings-form {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.secret-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.secret-row input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.arr-instances {
+  display: grid;
+  gap: 1rem;
+}
+
+.arr-row {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.arr-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+@media (min-width: 720px) {
+  .arr-row {
+    grid-template-columns: 1fr 7rem 1.4fr 1.4fr auto;
+    align-items: end;
+  }
+}
+
+.settings-form code {
+  font-size: 0.9em;
+}
+
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }

@@ -6,9 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/bogartusmaximus/listarr-go/internal/appstate"
 	"github.com/bogartusmaximus/listarr-go/internal/arr"
-	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
 	"github.com/bogartusmaximus/listarr-go/internal/store"
 	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
 	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
@@ -20,32 +21,22 @@ const (
 	Version = "0.5.0"
 )
 
-// Config is HTTP-facing runtime configuration.
-type Config struct {
-	APIKey       string
-	InstanceName string
-	ApplyEnabled bool
-	SearchBudget *ratelimit.HourlyBudget
-	Runner       *syncjob.Runner
-	TMDB         *tmdb.Client
-	Arr          *arr.Registry
-	Store        store.Store
-}
-
-// Server serves health/status, discover, arr inventory, and sync endpoints.
+// Server serves health/status, settings, discover, arr inventory, and sync endpoints.
 type Server struct {
-	cfg Config
+	rt  *appstate.Runtime
 	mux *http.ServeMux
 }
 
-// New registers routes.
-func New(cfg Config) *Server {
-	if cfg.InstanceName == "" {
-		cfg.InstanceName = "listarr"
+// New registers routes against a mutable runtime.
+func New(rt *appstate.Runtime) *Server {
+	if rt == nil {
+		rt = &appstate.Runtime{}
 	}
-	s := &Server{cfg: cfg, mux: http.NewServeMux()}
+	s := &Server{rt: rt, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/system/status", s.requireAPIKey(s.handleStatus))
+	s.mux.HandleFunc("GET /api/v1/settings", s.requireAPIKey(s.handleGetSettings))
+	s.mux.HandleFunc("PUT /api/v1/settings", s.requireAPIKey(s.handlePutSettings))
 	s.mux.HandleFunc("GET /api/v1/discover/movies", s.requireAPIKey(s.handleDiscoverMovies))
 	s.mux.HandleFunc("GET /api/v1/discover/tv", s.requireAPIKey(s.handleDiscoverTV))
 	s.mux.HandleFunc("GET /api/v1/arr/instances", s.requireAPIKey(s.handleArrInstances))
@@ -85,36 +76,71 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
+	view := s.rt.View()
 	remaining := 0
 	limit := 0
-	if s.cfg.SearchBudget != nil {
-		remaining = s.cfg.SearchBudget.Remaining()
-		limit = s.cfg.SearchBudget.Limit()
+	if view.SearchBudget != nil {
+		remaining = view.SearchBudget.Remaining()
+		limit = view.SearchBudget.Limit()
 	}
 	arrCount := 0
-	if s.cfg.Arr != nil {
-		arrCount = s.cfg.Arr.Len()
+	if view.Arr != nil {
+		arrCount = view.Arr.Len()
 	}
 	storeBackend := ""
-	if s.cfg.Store != nil {
-		storeBackend = string(s.cfg.Store.Backend())
+	if view.Store != nil {
+		storeBackend = string(view.Store.Backend())
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"appName":               AppName,
 		"version":               Version,
-		"instanceName":          s.cfg.InstanceName,
-		"applyEnabled":          s.cfg.ApplyEnabled,
+		"instanceName":          view.InstanceName,
+		"applyEnabled":          view.ApplyEnabled,
 		"torboxSearchPerHour":   limit,
 		"torboxSearchRemaining": remaining,
-		"tmdbConfigured":        s.cfg.TMDB != nil,
+		"tmdbConfigured":        view.TMDB != nil,
 		"arrInstances":          arrCount,
-		"syncConfigured":        s.cfg.Runner != nil,
+		"syncConfigured":        view.Runner != nil,
 		"storeBackend":          storeBackend,
 	})
 }
 
+func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
+	view := s.rt.View()
+	writeJSON(w, http.StatusOK, view.Settings)
+}
+
+func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	view := s.rt.View()
+	if view.Store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "store is not configured"})
+		return
+	}
+	var set store.Settings
+	if err := json.NewDecoder(r.Body).Decode(&set); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid json"})
+		return
+	}
+	set = appstate.Normalize(set)
+	if err := appstate.Validate(set); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return
+	}
+	set.UpdatedAt = time.Now().UTC()
+	if err := s.rt.Apply(set); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return
+	}
+	if err := view.Store.PutSettings(r.Context(), set); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.rt.View().Settings)
+}
+
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.Store == nil {
+	view := s.rt.View()
+	if view.Store == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "store is not configured"})
 		return
 	}
@@ -127,32 +153,34 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
-	runs, err := s.cfg.Store.ListSyncRuns(r.Context(), limit)
+	runs, err := view.Store.ListSyncRuns(r.Context(), limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"backend": s.cfg.Store.Backend(),
+		"backend": view.Store.Backend(),
 		"runs":    runs,
 	})
 }
 
 func (s *Server) handleArrInstances(w http.ResponseWriter, _ *http.Request) {
-	if s.cfg.Arr == nil {
+	view := s.rt.View()
+	if view.Arr == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"instances": []arr.InstanceMeta{}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"instances": s.cfg.Arr.List()})
+	writeJSON(w, http.StatusOK, map[string]any{"instances": view.Arr.List()})
 }
 
 func (s *Server) handleArrImportLists(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.Arr == nil {
+	view := s.rt.View()
+	if view.Arr == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "arr registry not configured"})
 		return
 	}
 	name := r.PathValue("name")
-	if c, err := s.cfg.Arr.Radarr(name); err == nil {
+	if c, err := view.Arr.Radarr(name); err == nil {
 		lists, err := c.ListImportLists(r.Context())
 		if err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"message": err.Error()})
@@ -161,7 +189,7 @@ func (s *Server) handleArrImportLists(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"instance": name, "kind": arr.KindRadarr, "importLists": lists})
 		return
 	}
-	if c, err := s.cfg.Arr.Sonarr(name); err == nil {
+	if c, err := view.Arr.Sonarr(name); err == nil {
 		lists, err := c.ListImportLists(r.Context())
 		if err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"message": err.Error()})
@@ -182,7 +210,8 @@ func (s *Server) handleDiscoverTV(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) discover(w http.ResponseWriter, r *http.Request, media string) {
-	if s.cfg.TMDB == nil {
+	view := s.rt.View()
+	if view.TMDB == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "tmdb not configured"})
 		return
 	}
@@ -192,9 +221,9 @@ func (s *Server) discover(w http.ResponseWriter, r *http.Request, media string) 
 		err   error
 	)
 	if media == "movie" {
-		items, err = s.cfg.TMDB.DiscoverMovies(r.Context(), q)
+		items, err = view.TMDB.DiscoverMovies(r.Context(), q)
 	} else {
-		items, err = s.cfg.TMDB.DiscoverTV(r.Context(), q)
+		items, err = view.TMDB.DiscoverTV(r.Context(), q)
 	}
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"message": err.Error()})
@@ -208,10 +237,11 @@ func (s *Server) handleSyncPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSyncApply(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.ApplyEnabled {
+	view := s.rt.View()
+	if !view.ApplyEnabled {
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"message":     "apply disabled",
-			"description": "set LISTARR_APPLY=1 to enable mutating routes",
+			"description": "enable apply in Settings (or seed LISTARR_APPLY=1 on first boot)",
 		})
 		return
 	}
@@ -219,7 +249,8 @@ func (s *Server) handleSyncApply(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runSync(w http.ResponseWriter, r *http.Request, dryRun bool) {
-	if s.cfg.Runner == nil {
+	view := s.rt.View()
+	if view.Runner == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "sync runner not configured"})
 		return
 	}
@@ -228,17 +259,17 @@ func (s *Server) runSync(w http.ResponseWriter, r *http.Request, dryRun bool) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid json"})
 		return
 	}
-	res, err := s.cfg.Runner.Run(r.Context(), req, dryRun)
+	res, err := view.Runner.Run(r.Context(), req, dryRun)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}
-	s.persistSyncRun(r, req, res)
+	s.persistSyncRun(r, view, req, res)
 	writeJSON(w, http.StatusOK, res)
 }
 
-func (s *Server) persistSyncRun(r *http.Request, req syncjob.Request, res syncjob.Result) {
-	if s.cfg.Store == nil {
+func (s *Server) persistSyncRun(r *http.Request, view appstate.Snapshot, req syncjob.Request, res syncjob.Result) {
+	if view.Store == nil {
 		return
 	}
 	targetInstance := req.Target.Instance
@@ -249,7 +280,7 @@ func (s *Server) persistSyncRun(r *http.Request, req syncjob.Request, res syncjo
 			targetInstance = "radarr"
 		}
 	}
-	err := s.cfg.Store.SaveSyncRun(r.Context(), store.SyncRun{
+	err := view.Store.SaveSyncRun(r.Context(), store.SyncRun{
 		DryRun:         res.DryRun,
 		Source:         req.Source,
 		MediaType:      req.MediaType,
@@ -261,7 +292,7 @@ func (s *Server) persistSyncRun(r *http.Request, req syncjob.Request, res syncjo
 		Errors:         res.Errors,
 	})
 	if err != nil {
-		slog.Error("persist sync run", "err", err, "backend", s.cfg.Store.Backend())
+		slog.Error("persist sync run", "err", err, "backend", view.Store.Backend())
 	}
 }
 
@@ -309,10 +340,11 @@ func (s *Server) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) authorized(r *http.Request) bool {
-	if s.cfg.APIKey == "" {
+	view := s.rt.View()
+	if view.APIKey == "" {
 		return false
 	}
-	want := []byte(s.cfg.APIKey)
+	want := []byte(view.APIKey)
 	if got := r.Header.Get("X-Api-Key"); got != "" {
 		return subtle.ConstantTimeCompare([]byte(got), want) == 1
 	}
