@@ -3,18 +3,20 @@ package api
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/bogartusmaximus/listarr-go/internal/arr"
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
+	"github.com/bogartusmaximus/listarr-go/internal/store"
 	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
 	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
 )
 
 const (
 	AppName = "listarr-go"
-	Version = "0.3.0"
+	Version = "0.4.0"
 )
 
 // Config is HTTP-facing runtime configuration.
@@ -26,6 +28,7 @@ type Config struct {
 	Runner       *syncjob.Runner
 	TMDB         *tmdb.Client
 	Arr          *arr.Registry
+	Store        store.Store
 }
 
 // Server serves health/status, discover, arr inventory, and sync endpoints.
@@ -46,6 +49,7 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/v1/discover/tv", s.requireAPIKey(s.handleDiscoverTV))
 	s.mux.HandleFunc("GET /api/v1/arr/instances", s.requireAPIKey(s.handleArrInstances))
 	s.mux.HandleFunc("GET /api/v1/arr/{name}/importlists", s.requireAPIKey(s.handleArrImportLists))
+	s.mux.HandleFunc("GET /api/v1/activity", s.requireAPIKey(s.handleActivity))
 	s.mux.HandleFunc("POST /api/v1/sync/preview", s.requireAPIKey(s.handleSyncPreview))
 	s.mux.HandleFunc("POST /api/v1/sync/apply", s.requireAPIKey(s.handleSyncApply))
 	return s
@@ -71,6 +75,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	if s.cfg.Arr != nil {
 		arrCount = s.cfg.Arr.Len()
 	}
+	storeBackend := ""
+	if s.cfg.Store != nil {
+		storeBackend = string(s.cfg.Store.Backend())
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"appName":               AppName,
 		"version":               Version,
@@ -81,6 +89,32 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		"tmdbConfigured":        s.cfg.TMDB != nil,
 		"arrInstances":          arrCount,
 		"syncConfigured":        s.cfg.Runner != nil,
+		"storeBackend":          storeBackend,
+	})
+}
+
+func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "store is not configured"})
+		return
+	}
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"message": "limit must be a positive integer"})
+			return
+		}
+		limit = n
+	}
+	runs, err := s.cfg.Store.ListSyncRuns(r.Context(), limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"backend": s.cfg.Store.Backend(),
+		"runs":    runs,
 	})
 }
 
@@ -179,7 +213,36 @@ func (s *Server) runSync(w http.ResponseWriter, r *http.Request, dryRun bool) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}
+	s.persistSyncRun(r, req, res)
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) persistSyncRun(r *http.Request, req syncjob.Request, res syncjob.Result) {
+	if s.cfg.Store == nil {
+		return
+	}
+	targetInstance := req.Target.Instance
+	if targetInstance == "" {
+		if req.MediaType == "tv" {
+			targetInstance = "sonarr"
+		} else {
+			targetInstance = "radarr"
+		}
+	}
+	err := s.cfg.Store.SaveSyncRun(r.Context(), store.SyncRun{
+		DryRun:         res.DryRun,
+		Source:         req.Source,
+		MediaType:      req.MediaType,
+		SourceInstance: req.SourceInstance,
+		TargetInstance: targetInstance,
+		Adds:           res.Adds,
+		Skips:          res.Skips,
+		Deferred:       res.Deferred,
+		Errors:         res.Errors,
+	})
+	if err != nil {
+		slog.Error("persist sync run", "err", err, "backend", s.cfg.Store.Backend())
+	}
 }
 
 func discoverQueryFromRequest(r *http.Request) tmdb.DiscoverQuery {

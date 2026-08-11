@@ -7,7 +7,7 @@ library sync** (local ↔ external) — with TorBox-friendly search-on-add limit
 > Inspired by [fisherd80/Listarr](https://github.com/fisherd80/listarr) (MIT).
 > Clean-room Go implementation; see [NOTICE](NOTICE).
 
-**Status:** v0.3 — TMDB discover + named *arr registry + `arr-library` sync.
+**Status:** v0.4 — sync activity store (Polars default + Postgres; SQLite/MySQL stubbed).
 
 ## Public-repo security
 
@@ -19,6 +19,28 @@ library sync** (local ↔ external) — with TorBox-friendly search-on-add limit
 | Examples | `127.0.0.1` placeholders only — never private MagicDNS |
 
 See [SECURITY.md](SECURITY.md).
+
+## Store backends
+
+Sync preview/apply runs are persisted through a pluggable store:
+
+| Backend | Role |
+|---------|------|
+| `polars` (default) | In-memory + CSV under `LISTARR_POLARS_DIR` for tests / local dev |
+| `postgres` | Production OLTP (`LISTARR_DATABASE_URL` / `DATABASE_URL`) |
+| `sqlite` / `mysql` | Stubbed — clear error until implemented |
+
+```bash
+# Dev / CI (default)
+export LISTARR_STORE_BACKEND=polars
+# export LISTARR_POLARS_DIR=data/polars
+
+# Production
+# export LISTARR_STORE_BACKEND=postgres
+# export LISTARR_DATABASE_URL='postgres://listarr:…@127.0.0.1:5432/listarr?sslmode=disable'
+```
+
+Recent runs: `GET /api/v1/activity`. Polars CSV smoke: `uv run --with polars python scripts/test_polars_store.py data/polars/sync_runs.csv`.
 
 ## Dual *arr sync (first use case)
 
@@ -83,6 +105,9 @@ that Import List stamped (`sourceFilter.tagIds`).
 | `LISTARR_APPLY` | off | Set `1` to mutate |
 | `LISTARR_TORBOX_SEARCH_PER_HOUR` | `60` | Search budget |
 | `LISTARR_TMDB_API_KEY` | none | Discover |
+| `LISTARR_STORE_BACKEND` | `polars` | `postgres` \| `polars` \| `sqlite` \| `mysql` |
+| `LISTARR_DATABASE_URL` / `DATABASE_URL` | none | Required for `postgres` |
+| `LISTARR_POLARS_DIR` | `data/polars` | CSV dump directory |
 | `LISTARR_ARR_<NAME>_URL` | none | Named instance |
 | `LISTARR_ARR_<NAME>_API_KEY` | none | Named instance |
 | `LISTARR_ARR_<NAME>_KIND` | none | `radarr` or `sonarr` |

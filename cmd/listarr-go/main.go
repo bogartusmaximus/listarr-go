@@ -11,6 +11,7 @@ import (
 	"github.com/bogartusmaximus/listarr-go/internal/config"
 	"github.com/bogartusmaximus/listarr-go/internal/httpx"
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
+	"github.com/bogartusmaximus/listarr-go/internal/store"
 	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
 	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
 )
@@ -21,6 +22,17 @@ func main() {
 		slog.Error("config", "err", err)
 		os.Exit(1)
 	}
+
+	st, err := store.Open(store.Config{
+		Backend:     store.Backend(cfg.StoreBackend),
+		DatabaseURL: cfg.DatabaseURL,
+		PolarsDir:   cfg.PolarsDir,
+	})
+	if err != nil {
+		slog.Error("store", "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = st.Close() }()
 
 	budget := ratelimit.NewHourlyBudget(cfg.TorboxSearchPerHour)
 	httpClient := httpx.New(20 * time.Second)
@@ -55,6 +67,7 @@ func main() {
 		Runner:       runner,
 		TMDB:         tmdbClient,
 		Arr:          reg,
+		Store:        st,
 	})
 
 	httpSrv := &http.Server{
@@ -71,6 +84,7 @@ func main() {
 		"instance", cfg.InstanceName,
 		"applyEnabled", cfg.ApplyEnabled,
 		"torboxSearchPerHour", cfg.TorboxSearchPerHour,
+		"storeBackend", st.Backend(),
 		"tmdbConfigured", tmdbClient != nil,
 		"arrInstances", reg.Len(),
 		"version", api.Version,

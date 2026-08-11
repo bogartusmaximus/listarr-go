@@ -20,6 +20,10 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("LISTARR_INSTANCE_NAME", "")
 	t.Setenv("LISTARR_APPLY", "")
 	t.Setenv("LISTARR_TORBOX_SEARCH_PER_HOUR", "")
+	t.Setenv("LISTARR_STORE_BACKEND", "")
+	t.Setenv("LISTARR_DATABASE_URL", "")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("LISTARR_POLARS_DIR", "")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -33,6 +37,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.TorboxSearchPerHour != config.DefaultTorboxSearchPerHr {
 		t.Fatalf("perHour=%d", cfg.TorboxSearchPerHour)
+	}
+	if cfg.StoreBackend != config.DefaultStoreBackend {
+		t.Fatalf("storeBackend=%q", cfg.StoreBackend)
 	}
 }
 

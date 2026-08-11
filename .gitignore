@@ -26,6 +26,7 @@ go.work.sum
 *.key
 secrets/
 instance/
+data/
 config.local.yaml
 config.local.yml
 config.local.json
