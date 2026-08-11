@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+      - name: Test
+        run: go test ./...
+      - name: Contract smoke
+        run: |
+          export LISTARR_API_KEY='ci-contract-only-not-a-real-secret'
+          export LISTARR_LISTEN='127.0.0.1:18787'
+          go run ./cmd/listarr-go &
+          pid=$!
+          trap 'kill $pid' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:18787/health" >/dev/null; then
+              break
+            fi
+            sleep 0.2
+          done
+          python3 scripts/run-contract-tests.py \
+            --base-url http://127.0.0.1:18787 \
+            --api-key "$LISTARR_API_KEY"

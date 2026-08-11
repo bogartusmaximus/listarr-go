@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: listarr-go
+  description: |
+    Public listarr-go API. Inspired by fisherd80/Listarr (MIT).
+    Safe defaults: loopback listen, apply opt-in, no private host defaults.
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8787
+    description: Local loopback (default)
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Liveness probe (no auth)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /api/v1/system/status:
+    get:
+      operationId: systemStatus
+      summary: Instance status
+      security:
+        - ApiKeyHeader: []
+        - ApiKeyQuery: []
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatus"
+        "401":
+          description: Missing or invalid API key
+  /api/v1/sync/{listId}/preview:
+    post:
+      operationId: syncPreview
+      summary: Preview list sync (stub until providers land)
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/ListId"
+      responses:
+        "501":
+          description: Not implemented yet
+  /api/v1/sync/{listId}/apply:
+    post:
+      operationId: syncApply
+      summary: Apply list sync (requires LISTARR_APPLY=1)
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/ListId"
+      responses:
+        "403":
+          description: Apply disabled
+        "501":
+          description: Not implemented yet
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    ApiKeyQuery:
+      type: apiKey
+      in: query
+      name: apikey
+  parameters:
+    ListId:
+      name: listId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    SystemStatus:
+      type: object
+      required:
+        - appName
+        - version
+        - instanceName
+        - applyEnabled
+        - torboxSearchPerHour
+        - torboxSearchRemaining
+      properties:
+        appName:
+          type: string
+          example: listarr-go
+        version:
+          type: string
+        instanceName:
+          type: string
+        applyEnabled:
+          type: boolean
+        torboxSearchPerHour:
+          type: integer
+          example: 60
+        torboxSearchRemaining:
+          type: integer

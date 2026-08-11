@@ -1,0 +1,13 @@
+listarr-go
+==========
+
+This project is inspired by Listarr:
+
+  https://github.com/fisherd80/listarr
+
+Copyright (c) fisherd80 and Listarr contributors.
+Listarr is licensed under the MIT License.
+
+listarr-go is an independent clean-room implementation in Go. It is not a fork
+of the Listarr source tree and is not affiliated with Radarr, Sonarr, Seerr,
+TMDB, or IMDb.
