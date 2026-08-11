@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -82,7 +83,7 @@ func TestPolarsSettingsRoundTrip(t *testing.T) {
 	want := store.Settings{
 		APIKey:              "k",
 		InstanceName:        "listarr",
-		ApplyEnabled:        true,
+		SafeMode:            false,
 		TorboxSearchPerHour: 30,
 		TMDBAPIKey:          "tmdb",
 		ArrInstances: []store.ArrInstanceSettings{
@@ -121,5 +122,24 @@ func TestPolarsSettingsRoundTrip(t *testing.T) {
 	got2, found, err := s2.GetSettings(context.Background())
 	if err != nil || !found || got2.APIKey != "k" {
 		t.Fatalf("reload found=%v got=%+v err=%v", found, got2, err)
+	}
+}
+
+func TestSettingsMigrateApplyEnabled(t *testing.T) {
+	raw := []byte(`{"apiKey":"k","instanceName":"x","applyEnabled":true,"torboxSearchPerHour":60,"arrInstances":[]}`)
+	var set store.Settings
+	if err := json.Unmarshal(raw, &set); err != nil {
+		t.Fatal(err)
+	}
+	if set.SafeMode {
+		t.Fatalf("applyEnabled true should become safeMode false: %+v", set)
+	}
+	raw2 := []byte(`{"apiKey":"k","instanceName":"x","torboxSearchPerHour":60}`)
+	var set2 store.Settings
+	if err := json.Unmarshal(raw2, &set2); err != nil {
+		t.Fatal(err)
+	}
+	if !set2.SafeMode {
+		t.Fatal("missing safeMode should default on")
 	}
 }

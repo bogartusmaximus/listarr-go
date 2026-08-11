@@ -329,6 +329,53 @@ func matchTags(have, want []int, requireAll bool) bool {
 	return false
 }
 
+// ConnectionTest is a safe result from probing an *arr instance.
+type ConnectionTest struct {
+	OK      bool   `json:"ok"`
+	Kind    Kind   `json:"kind"`
+	AppName string `json:"appName,omitempty"`
+	Version string `json:"version,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// TestConnection calls GET /api/v3/system/status on the given base URL.
+func TestConnection(ctx context.Context, kind Kind, baseURL, apiKey string, httpClient *httpx.Client) (ConnectionTest, error) {
+	kind = Kind(strings.ToLower(strings.TrimSpace(string(kind))))
+	if kind != KindRadarr && kind != KindSonarr {
+		return ConnectionTest{}, fmt.Errorf("kind must be radarr or sonarr")
+	}
+	base, err := normalizeBase(baseURL)
+	if err != nil {
+		return ConnectionTest{}, err
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		return ConnectionTest{}, fmt.Errorf("api key is required")
+	}
+	hc := keyedClient(apiKey, httpClient)
+	rawURL := base + "/api/v3/system/status"
+	resp, body, err := hc.DoJSON(ctx, http.MethodGet, rawURL, nil, nil)
+	if err != nil {
+		return ConnectionTest{OK: false, Kind: kind, Message: err.Error()}, nil
+	}
+	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
+		return ConnectionTest{OK: false, Kind: kind, Message: err.Error()}, nil
+	}
+	var status struct {
+		AppName string `json:"appName"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &status); err != nil {
+		return ConnectionTest{OK: false, Kind: kind, Message: "decode system status: " + err.Error()}, nil
+	}
+	return ConnectionTest{
+		OK:      true,
+		Kind:    kind,
+		AppName: status.AppName,
+		Version: status.Version,
+		Message: "ok",
+	}, nil
+}
+
 func keyedClient(apiKey string, template *httpx.Client) *httpx.Client {
 	timeout := time.Duration(0)
 	if template != nil {

@@ -54,7 +54,7 @@ Smoke script: `./scripts/docker-smoke.sh`
 | Rule | Detail |
 |------|--------|
 | Secrets | API key auto-generated into store on first boot; bootstrap (`LISTEN` / store backend) stays env; Settings UI may show secrets |
-| Apply | Opt-in via Settings (seeded from `LISTARR_APPLY=1`) |
+| Apply / Safe Mode | Safe Mode on by default (read-only); set `LISTARR_APPLY=1` to seed Safe Mode off |
 | Listen | Default `127.0.0.1:8787` |
 | Examples | `127.0.0.1` placeholders only — never private MagicDNS |
 
@@ -96,7 +96,7 @@ export LISTARR_ARR_LOCAL_KIND=radarr
 export LISTARR_ARR_REMOTE_URL='http://127.0.0.1:7879'
 export LISTARR_ARR_REMOTE_API_KEY='…'
 export LISTARR_ARR_REMOTE_KIND=radarr
-# export LISTARR_APPLY=1   # only when ready to mutate
+# export LISTARR_APPLY=1   # seed Safe Mode off (allow Apply writes)
 go run ./cmd/listarr-go
 # open http://127.0.0.1:8787/ — Settings shows the generated API key
 ```
@@ -149,7 +149,7 @@ that Import List stamped (`sourceFilter.tagIds`).
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `LISTARR_INSTANCE_NAME` | `listarr` | Display name |
-| `LISTARR_APPLY` | off | Set `1` to seed apply enabled |
+| `LISTARR_APPLY` | off | Set `1` to seed Safe Mode **off** (writes allowed) |
 | `LISTARR_TORBOX_SEARCH_PER_HOUR` | `60` | Search budget |
 | `LISTARR_TMDB_API_KEY` | none | Discover |
 | `LISTARR_ARR_<NAME>_URL` | none | Named instance |

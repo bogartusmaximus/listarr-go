@@ -20,9 +20,11 @@ func testRT(apiKey string) *appstate.Runtime {
 	return &appstate.Runtime{
 		APIKey:       apiKey,
 		InstanceName: "test",
+		SafeMode:     true,
 		Settings: store.Settings{
 			APIKey:              apiKey,
 			InstanceName:        "test",
+			SafeMode:            true,
 			TorboxSearchPerHour: 60,
 			ArrInstances:        []store.ArrInstanceSettings{},
 		},
@@ -111,6 +113,9 @@ func TestStatusRequiresKeyAndReportsBudget(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
+	if body["safeMode"] != true {
+		t.Fatalf("safeMode=%v", body["safeMode"])
+	}
 	if body["applyEnabled"] != false {
 		t.Fatalf("applyEnabled=%v", body["applyEnabled"])
 	}
@@ -125,7 +130,7 @@ func TestStatusRequiresKeyAndReportsBudget(t *testing.T) {
 	}
 }
 
-func TestApplyDisabledReturnsForbidden(t *testing.T) {
+func TestSafeModeBlocksApply(t *testing.T) {
 	srv := api.New(testRT("secret"))
 	rec := httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"source":"tmdb","mediaType":"movie","tmdbIds":[1],"target":{"rootFolderPath":"/data","qualityProfileId":1}}`)
@@ -218,7 +223,7 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 	payload := store.Settings{
 		APIKey:              "secret-2",
 		InstanceName:        "homelab",
-		ApplyEnabled:        true,
+		SafeMode:            false,
 		TorboxSearchPerHour: 42,
 		TMDBAPIKey:          "tmdb-key",
 		ArrInstances:        []store.ArrInstanceSettings{},
@@ -235,7 +240,7 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved.APIKey != "secret-2" || saved.TMDBAPIKey != "tmdb-key" || !saved.ApplyEnabled {
+	if saved.APIKey != "secret-2" || saved.TMDBAPIKey != "tmdb-key" || saved.SafeMode {
 		t.Fatalf("%+v", saved)
 	}
 	if budget.Limit() != 42 {
@@ -261,6 +266,17 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 	got, found, err := st.GetSettings(context.Background())
 	if err != nil || !found || got.InstanceName != "homelab" {
 		t.Fatalf("store found=%v got=%+v err=%v", found, got, err)
+	}
+}
+
+func TestArrTestValidation(t *testing.T) {
+	srv := api.New(testRT("secret"))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/arr/test", bytes.NewBufferString(`{"kind":"lidarr","url":"http://127.0.0.1:7878","apiKey":"k"}`))
+	req.Header.Set("X-Api-Key", "secret")
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

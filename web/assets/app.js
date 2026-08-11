@@ -4,7 +4,7 @@
     status: null,
     instances: [],
     lastSyncPayload: null,
-    applyEnabled: false,
+    safeMode: true,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -87,7 +87,7 @@
     const st = state.status || {};
     $("stConnection").textContent = state.status ? "connected" : "not connected";
     $("stVersion").textContent = st.version || "—";
-    $("stApply").textContent = st.applyEnabled ? "enabled" : "disabled";
+    $("stSafeMode").textContent = st.safeMode ? "on (read-only)" : "off (writes allowed)";
     $("stBudget").textContent =
       st.torboxSearchPerHour != null
         ? `${st.torboxSearchRemaining ?? "?"} / ${st.torboxSearchPerHour}`
@@ -111,12 +111,12 @@
     }
   }
 
-  function setApplyEnabled(on) {
-    state.applyEnabled = Boolean(on);
-    $("btnApply").disabled = !state.applyEnabled || !state.lastSyncPayload;
-    $("applyHint").textContent = state.applyEnabled
-      ? "Apply will mutate the target *arr. Preview first."
-      : "Apply stays locked until enabled in Settings.";
+  function setSafeMode(on) {
+    state.safeMode = Boolean(on);
+    $("btnApply").disabled = state.safeMode || !state.lastSyncPayload;
+    $("applyHint").textContent = state.safeMode
+      ? "Apply stays locked while Safe Mode is on."
+      : "Safe Mode is off — Apply will write to the target *arr. Preview first.";
   }
 
   function arrRow(inst = {}) {
@@ -142,9 +142,13 @@
           <button type="button" class="btn arr-copy">Copy</button>
         </div>
       </label>
+      <button type="button" class="btn arr-test">Test</button>
       <button type="button" class="btn danger arr-remove">Remove</button>
     `;
     row.querySelector(".arr-remove").addEventListener("click", () => row.remove());
+    row.querySelector(".arr-test").addEventListener("click", () => {
+      testArrRow(row).catch((err) => toast(err.message));
+    });
     row.querySelector(".arr-toggle").addEventListener("click", (ev) => {
       const input = row.querySelector(".arr-key");
       const show = input.type === "password";
@@ -163,6 +167,41 @@
     return row;
   }
 
+  async function testArrRow(row) {
+    const payload = {
+      name: row.querySelector(".arr-name").value.trim(),
+      kind: row.querySelector(".arr-kind").value,
+      url: row.querySelector(".arr-url").value.trim(),
+      apiKey: row.querySelector(".arr-key").value.trim(),
+    };
+    if (!payload.url || !payload.apiKey) {
+      throw new Error("URL and API key are required to test");
+    }
+    const res = await fetch("/api/v1/arr/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": apiKey(),
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await res.text();
+    let body = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { message: text };
+      }
+    }
+    if (!res.ok || !body || !body.ok) {
+      const msg = (body && (body.message || body.description)) || res.statusText;
+      throw new Error(msg || "connection test failed");
+    }
+    const label = [body.appName, body.version].filter(Boolean).join(" ");
+    toast(label ? `OK — ${label}` : "OK — connected");
+  }
+
   function generateApiKeyHex() {
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
@@ -175,7 +214,7 @@
     $("setApiKey").type = "password";
     const toggle = document.querySelector('[data-toggle-secret="setApiKey"]');
     if (toggle) toggle.textContent = "Show";
-    $("setApply").checked = Boolean(set.applyEnabled);
+    $("setSafeMode").checked = set.safeMode !== false;
     $("setTorbox").value = set.torboxSearchPerHour || 60;
     $("setTmdb").value = set.tmdbApiKey || "";
     $("setTmdb").type = "password";
@@ -204,7 +243,7 @@
     return {
       apiKey: $("setApiKey").value.trim(),
       instanceName: $("setInstanceName").value.trim(),
-      applyEnabled: $("setApply").checked,
+      safeMode: $("setSafeMode").checked,
       torboxSearchPerHour: Number($("setTorbox").value) || 60,
       tmdbApiKey: $("setTmdb").value.trim(),
       arrInstances,
@@ -237,7 +276,7 @@
     state.instances = body.instances || [];
     fillInstanceSelects();
     renderOverview();
-    setApplyEnabled(state.status.applyEnabled);
+    setSafeMode(state.status.safeMode !== false);
     $("chipInstance").textContent = state.status.instanceName || "listarr";
     $("chipHint").textContent = "Ready — API key is in Settings.";
   }
@@ -301,7 +340,7 @@
 
   function renderSyncResult(res) {
     state.lastSyncPayload = buildSyncPayload();
-    setApplyEnabled(state.applyEnabled);
+    setSafeMode(state.safeMode);
     const meta = $("syncMeta");
     meta.hidden = false;
     meta.textContent = `${res.dryRun ? "Preview" : "Apply"} · adds ${res.adds} · skips ${res.skips} · deferred ${res.deferredSearch || 0} · errors ${res.errors}`;

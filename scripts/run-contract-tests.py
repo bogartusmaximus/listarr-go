@@ -90,6 +90,7 @@ def main() -> int:
         or not isinstance(body, dict)
         or body.get("appName") != "listarr-go"
         or body.get("applyEnabled") is not False
+        or body.get("safeMode") is not True
         or body.get("storeBackend") != "polars"
     ):
         print(f"FAIL status auth: status={status} body={body}")

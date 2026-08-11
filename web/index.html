@@ -39,7 +39,7 @@
       <dl class="status-grid" id="statusGrid">
         <div><dt>Connection</dt><dd id="stConnection">not connected</dd></div>
         <div><dt>Version</dt><dd id="stVersion">—</dd></div>
-        <div><dt>Apply</dt><dd id="stApply">—</dd></div>
+		<div><dt>Safe Mode</dt><dd id="stSafeMode">—</dd></div>
         <div><dt>Search budget</dt><dd id="stBudget">—</dd></div>
         <div><dt>Store</dt><dd id="stStore">—</dd></div>
         <div><dt>TMDB</dt><dd id="stTmdb">—</dd></div>
@@ -127,7 +127,7 @@
         <div class="actions">
           <button type="submit" class="btn primary" id="btnPreview">Preview</button>
           <button type="button" class="btn danger" id="btnApply" disabled>Apply</button>
-          <p class="hint" id="applyHint">Apply stays locked until enabled in Settings.</p>
+          <p class="hint" id="applyHint">Apply stays locked while Safe Mode is on.</p>
         </div>
       </form>
       <div class="result-meta" id="syncMeta" hidden></div>
@@ -210,9 +210,10 @@
             <p class="hint">Show / Copy / Regenerate — Save settings to apply a regenerated key (agents use X-Api-Key).</p>
           </label>
           <label class="field check">
-            <input type="checkbox" id="setApply" />
-            <span>Enable apply (mutations)</span>
+            <input type="checkbox" id="setSafeMode" checked />
+            <span>Safe Mode</span>
           </label>
+          <p class="hint">Read-only — Sync preview only; turn off to allow Apply writes to *arr.</p>
           <label class="field">
             <span>TorBox search per hour</span>
             <input type="number" id="setTorbox" min="1" required value="60" />

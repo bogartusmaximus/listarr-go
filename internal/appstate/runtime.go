@@ -23,7 +23,7 @@ type Runtime struct {
 
 	APIKey       string
 	InstanceName string
-	ApplyEnabled bool
+	SafeMode     bool
 	Settings     store.Settings
 	Arr          *arr.Registry
 	TMDB         *tmdb.Client
@@ -34,7 +34,7 @@ type Runtime struct {
 type Snapshot struct {
 	APIKey       string
 	InstanceName string
-	ApplyEnabled bool
+	SafeMode     bool
 	Settings     store.Settings
 	Arr          *arr.Registry
 	TMDB         *tmdb.Client
@@ -50,7 +50,7 @@ func (rt *Runtime) View() Snapshot {
 	return Snapshot{
 		APIKey:       rt.APIKey,
 		InstanceName: rt.InstanceName,
-		ApplyEnabled: rt.ApplyEnabled,
+		SafeMode:     rt.SafeMode,
 		Settings:     cloneSettings(rt.Settings),
 		Arr:          rt.Arr,
 		TMDB:         rt.TMDB,
@@ -83,7 +83,7 @@ func (rt *Runtime) Apply(set store.Settings) error {
 	defer rt.mu.Unlock()
 	rt.APIKey = set.APIKey
 	rt.InstanceName = set.InstanceName
-	rt.ApplyEnabled = set.ApplyEnabled
+	rt.SafeMode = set.SafeMode
 	rt.Settings = cloneSettings(set)
 	rt.Arr = reg
 	rt.TMDB = tmdbClient

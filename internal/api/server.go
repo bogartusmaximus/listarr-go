@@ -10,6 +10,7 @@ import (
 
 	"github.com/bogartusmaximus/listarr-go/internal/appstate"
 	"github.com/bogartusmaximus/listarr-go/internal/arr"
+	"github.com/bogartusmaximus/listarr-go/internal/httpx"
 	"github.com/bogartusmaximus/listarr-go/internal/store"
 	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
 	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
@@ -41,6 +42,7 @@ func New(rt *appstate.Runtime) *Server {
 	s.mux.HandleFunc("GET /api/v1/discover/movies", s.requireAPIKey(s.handleDiscoverMovies))
 	s.mux.HandleFunc("GET /api/v1/discover/tv", s.requireAPIKey(s.handleDiscoverTV))
 	s.mux.HandleFunc("GET /api/v1/arr/instances", s.requireAPIKey(s.handleArrInstances))
+	s.mux.HandleFunc("POST /api/v1/arr/test", s.requireAPIKey(s.handleArrTest))
 	s.mux.HandleFunc("GET /api/v1/arr/{name}/importlists", s.requireAPIKey(s.handleArrImportLists))
 	s.mux.HandleFunc("GET /api/v1/activity", s.requireAPIKey(s.handleActivity))
 	s.mux.HandleFunc("POST /api/v1/sync/preview", s.requireAPIKey(s.handleSyncPreview))
@@ -108,7 +110,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		"appName":               AppName,
 		"version":               Version,
 		"instanceName":          view.InstanceName,
-		"applyEnabled":          view.ApplyEnabled,
+		"safeMode":              view.SafeMode,
+		"applyEnabled":          !view.SafeMode,
 		"torboxSearchPerHour":   limit,
 		"torboxSearchRemaining": remaining,
 		"tmdbConfigured":        view.TMDB != nil,
@@ -186,6 +189,33 @@ func (s *Server) handleArrInstances(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"instances": view.Arr.List()})
 }
 
+func (s *Server) handleArrTest(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name   string `json:"name"`
+		Kind   string `json:"kind"`
+		URL    string `json:"url"`
+		APIKey string `json:"apiKey"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid json"})
+		return
+	}
+	var httpClient *httpx.Client
+	if s.rt != nil {
+		httpClient = s.rt.HTTPClient
+	}
+	result, err := arr.TestConnection(r.Context(), arr.Kind(req.Kind), req.URL, req.APIKey, httpClient)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return
+	}
+	status := http.StatusOK
+	if !result.OK {
+		status = http.StatusBadGateway
+	}
+	writeJSON(w, status, result)
+}
+
 func (s *Server) handleArrImportLists(w http.ResponseWriter, r *http.Request) {
 	view := s.rt.View()
 	if view.Arr == nil {
@@ -251,10 +281,10 @@ func (s *Server) handleSyncPreview(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSyncApply(w http.ResponseWriter, r *http.Request) {
 	view := s.rt.View()
-	if !view.ApplyEnabled {
+	if view.SafeMode {
 		writeJSON(w, http.StatusForbidden, map[string]string{
-			"message":     "apply disabled",
-			"description": "enable apply in Settings (or seed LISTARR_APPLY=1 on first boot)",
+			"message":     "safe mode enabled",
+			"description": "turn off Safe Mode in Settings to allow Apply writes to *arr",
 		})
 		return
 	}
