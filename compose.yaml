@@ -2,7 +2,7 @@
 # Usage:
 #   cp .env.docker.example .env
 #   docker compose up --build
-#   docker compose logs listarr   # copy generated apiKey on first boot
+#   open http://127.0.0.1:8787/  # UI bootstraps API key; view in Settings
 # Optional Postgres store:
 #   docker compose --profile postgres up --build
 

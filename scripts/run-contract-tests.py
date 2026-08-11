@@ -62,6 +62,17 @@ def main() -> int:
     else:
         print("PASS ui index")
 
+    status, body = request("GET", f"{base}/api/v1/ui/bootstrap")
+    if (
+        status != 200
+        or not isinstance(body, dict)
+        or body.get("apiKey") != key
+    ):
+        print(f"FAIL ui bootstrap: status={status} body={body}")
+        failures += 1
+    else:
+        print("PASS ui bootstrap")
+
     status, _ = request("GET", f"{base}/api/v1/system/status")
     if status != 401:
         print(f"FAIL status unauth: status={status} want=401")

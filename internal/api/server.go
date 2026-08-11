@@ -34,6 +34,7 @@ func New(rt *appstate.Runtime) *Server {
 	}
 	s := &Server{rt: rt, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+	s.mux.HandleFunc("GET /api/v1/ui/bootstrap", s.handleUIBootstrap)
 	s.mux.HandleFunc("GET /api/v1/system/status", s.requireAPIKey(s.handleStatus))
 	s.mux.HandleFunc("GET /api/v1/settings", s.requireAPIKey(s.handleGetSettings))
 	s.mux.HandleFunc("PUT /api/v1/settings", s.requireAPIKey(s.handlePutSettings))
@@ -73,6 +74,18 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleUIBootstrap gives the embedded operator UI the current API key so no
+// paste/connect step is required. Keep LISTARR_LISTEN on loopback.
+func (s *Server) handleUIBootstrap(w http.ResponseWriter, _ *http.Request) {
+	view := s.rt.View()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"appName":      AppName,
+		"version":      Version,
+		"instanceName": view.InstanceName,
+		"apiKey":       view.APIKey,
+	})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {

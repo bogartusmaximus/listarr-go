@@ -1,6 +1,6 @@
 (() => {
-  const KEY = "listarrApiKey";
   const state = {
+    apiKey: "",
     status: null,
     instances: [],
     lastSyncPayload: null,
@@ -20,24 +20,13 @@
   }
 
   function apiKey() {
-    return ($("apiKey").value || "").trim();
-  }
-
-  function saveKey() {
-    const k = apiKey();
-    if (k) sessionStorage.setItem(KEY, k);
-    else sessionStorage.removeItem(KEY);
-  }
-
-  function loadKey() {
-    const k = sessionStorage.getItem(KEY) || "";
-    $("apiKey").value = k;
+    return state.apiKey || "";
   }
 
   async function api(path, opts = {}) {
     const headers = Object.assign({}, opts.headers || {});
     const key = apiKey();
-    if (!key) throw new Error("Enter an API key and connect first");
+    if (!key) throw new Error("UI bootstrap has not loaded an API key yet");
     headers["X-Api-Key"] = key;
     if (opts.body && !headers["Content-Type"]) {
       headers["Content-Type"] = "application/json";
@@ -183,9 +172,15 @@
   function renderSettings(set) {
     $("setInstanceName").value = set.instanceName || "";
     $("setApiKey").value = set.apiKey || "";
+    $("setApiKey").type = "password";
+    const toggle = document.querySelector('[data-toggle-secret="setApiKey"]');
+    if (toggle) toggle.textContent = "Show";
     $("setApply").checked = Boolean(set.applyEnabled);
     $("setTorbox").value = set.torboxSearchPerHour || 60;
     $("setTmdb").value = set.tmdbApiKey || "";
+    $("setTmdb").type = "password";
+    const tmdbToggle = document.querySelector('[data-toggle-secret="setTmdb"]');
+    if (tmdbToggle) tmdbToggle.textContent = "Show";
     const wrap = $("arrInstances");
     wrap.innerHTML = "";
     const list = set.arrInstances || [];
@@ -229,24 +224,42 @@
       body: JSON.stringify(payload),
     });
     if (saved.apiKey) {
-      $("apiKey").value = saved.apiKey;
-      saveKey();
+      state.apiKey = saved.apiKey;
     }
     renderSettings(saved);
-    await connect();
+    await refresh();
     toast("Settings saved");
   }
 
-  async function connect() {
-    saveKey();
+  async function refresh() {
     state.status = await api("/api/v1/system/status");
     const body = await api("/api/v1/arr/instances");
     state.instances = body.instances || [];
     fillInstanceSelects();
     renderOverview();
     setApplyEnabled(state.status.applyEnabled);
-    $("authHint").textContent = `Connected to ${state.status.instanceName || "listarr"}.`;
-    toast("Connected");
+    $("chipInstance").textContent = state.status.instanceName || "listarr";
+    $("chipHint").textContent = "Ready — API key is in Settings.";
+  }
+
+  async function bootstrap() {
+    const res = await fetch("/api/v1/ui/bootstrap");
+    const text = await res.text();
+    let body = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = null;
+      }
+    }
+    if (!res.ok || !body || !body.apiKey) {
+      const msg = (body && body.message) || res.statusText || "bootstrap failed";
+      throw new Error(msg);
+    }
+    state.apiKey = body.apiKey;
+    $("chipInstance").textContent = body.instanceName || "listarr";
+    await refresh();
   }
 
   function toggleSourceFields() {
@@ -377,17 +390,7 @@
   }
 
   function wire() {
-    loadKey();
     toggleSourceFields();
-    $("btnConnect").addEventListener("click", () => {
-      connect().catch((err) => toast(err.message));
-    });
-    $("apiKey").addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") {
-        ev.preventDefault();
-        connect().catch((err) => toast(err.message));
-      }
-    });
     for (const btn of document.querySelectorAll(".tab")) {
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
     }
@@ -433,20 +436,20 @@
       });
     }
     $("btnRegenApiKey").addEventListener("click", () => {
-      if (!window.confirm("Generate a new API key? You must Save settings, then reconnect with the new key.")) {
+      if (!window.confirm("Generate a new API key? Save settings to apply it.")) {
         return;
       }
       $("setApiKey").value = generateApiKeyHex();
-      $("setApiKey").type = "text";
+      $("setApiKey").type = "password";
       const toggle = document.querySelector('[data-toggle-secret="setApiKey"]');
-      if (toggle) toggle.textContent = "Hide";
+      if (toggle) toggle.textContent = "Show";
       toast("New API key generated — save to apply");
     });
-    if (apiKey()) {
-      connect().catch(() => {
-        $("authHint").textContent = "Saved key present — click Connect.";
-      });
-    }
+    bootstrap().catch((err) => {
+      $("chipInstance").textContent = "unavailable";
+      $("chipHint").textContent = err.message;
+      toast(err.message);
+    });
   }
 
   wire();

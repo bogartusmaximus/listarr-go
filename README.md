@@ -17,15 +17,13 @@ On your Docker host as your login user:
 cp .env.docker.example .env
 # optional: set LISTARR_INSTANCE_NAME and *arr URLs
 docker compose up --build
-docker compose logs listarr   # copy generated apiKey on first boot
 ```
 
-Then open the UI:
+Then open the UI (no API key paste — the page bootstraps from the store):
 
 ```bash
-# browser
 open http://127.0.0.1:8787/
-# paste API key from logs → Connect → Settings (Show / Copy / Regenerate)
+# Settings shows the API key masked with Show / Copy / Regenerate
 ```
 
 Or curl (read key from the store after first boot):
@@ -72,7 +70,7 @@ Sync activity and **operator settings** persist through a pluggable store:
 | `postgres` | Production OLTP (`LISTARR_DATABASE_URL` / `DATABASE_URL`) |
 | `sqlite` / `mysql` | Stubbed — clear error until implemented |
 
-On first boot with an empty store, non-secret settings are **seeded from `.env`** and an **API key is generated** into the datastore (printed once in logs). Afterwards the datastore is SoT — edit via the Settings tab or `GET`/`PUT /api/v1/settings`. Listen address and store backend/DSN remain env-only (require restart).
+On first boot with an empty store, non-secret settings are **seeded from `.env`** and an **API key is generated** into the datastore. The embedded UI loads it via `/api/v1/ui/bootstrap` (keep listen on loopback). Afterwards the datastore is SoT — edit via the Settings tab or `GET`/`PUT /api/v1/settings`. Listen address and store backend/DSN remain env-only (require restart).
 
 ```bash
 # Dev / CI (default)
@@ -100,7 +98,7 @@ export LISTARR_ARR_REMOTE_API_KEY='…'
 export LISTARR_ARR_REMOTE_KIND=radarr
 # export LISTARR_APPLY=1   # only when ready to mutate
 go run ./cmd/listarr-go
-# copy apiKey from the "generated initial API key" log line
+# open http://127.0.0.1:8787/ — Settings shows the generated API key
 ```
 
 Preview titles that exist on `local` (monitored + tag) but not yet on `remote`:
@@ -159,7 +157,7 @@ that Import List stamped (`sourceFilter.tagIds`).
 | `LISTARR_ARR_<NAME>_KIND` | none | `radarr` or `sonarr` |
 | `LISTARR_RADARR_*` / `LISTARR_SONARR_*` | none | Legacy aliases → names `radarr` / `sonarr` |
 
-**API key:** generated automatically on first boot (not an env var). Shown in startup logs once; thereafter Settings → Show / Copy / Regenerate.
+**API key:** generated automatically on first boot (not an env var). Embedded UI bootstraps it; Settings → Show / Copy / Regenerate. Agents/curl still use `X-Api-Key` from Settings or `settings.json`.
 
 | Always env | Default | Notes |
 |------------|---------|-------|
