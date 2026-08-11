@@ -23,9 +23,15 @@ func main() {
 	}
 
 	budget := ratelimit.NewHourlyBudget(cfg.TorboxSearchPerHour)
-	deps := syncjob.Dependencies{SearchBudget: budget}
 	httpClient := httpx.New(20 * time.Second)
 
+	reg, err := arr.LoadRegistryFromEnv(httpClient)
+	if err != nil {
+		slog.Error("arr registry", "err", err)
+		os.Exit(1)
+	}
+
+	deps := syncjob.Dependencies{Arr: reg, SearchBudget: budget}
 	var tmdbClient *tmdb.Client
 	if cfg.TMDBAPIKey != "" {
 		tmdbClient, err = tmdb.New(cfg.TMDBAPIKey, "", httpClient)
@@ -35,25 +41,9 @@ func main() {
 		}
 		deps.TMDB = tmdbClient
 	}
-	if cfg.RadarrURL != "" && cfg.RadarrAPIKey != "" {
-		radarr, err := arr.NewRadarr(cfg.RadarrURL, cfg.RadarrAPIKey, httpClient)
-		if err != nil {
-			slog.Error("radarr", "err", err)
-			os.Exit(1)
-		}
-		deps.Radarr = radarr
-	}
-	if cfg.SonarrURL != "" && cfg.SonarrAPIKey != "" {
-		sonarr, err := arr.NewSonarr(cfg.SonarrURL, cfg.SonarrAPIKey, httpClient)
-		if err != nil {
-			slog.Error("sonarr", "err", err)
-			os.Exit(1)
-		}
-		deps.Sonarr = sonarr
-	}
 
 	var runner *syncjob.Runner
-	if deps.TMDB != nil || deps.Radarr != nil || deps.Sonarr != nil {
+	if deps.TMDB != nil || reg.Len() > 0 {
 		runner = &syncjob.Runner{Deps: deps}
 	}
 
@@ -64,14 +54,15 @@ func main() {
 		SearchBudget: budget,
 		Runner:       runner,
 		TMDB:         tmdbClient,
+		Arr:          reg,
 	})
 
 	httpSrv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
@@ -81,8 +72,7 @@ func main() {
 		"applyEnabled", cfg.ApplyEnabled,
 		"torboxSearchPerHour", cfg.TorboxSearchPerHour,
 		"tmdbConfigured", tmdbClient != nil,
-		"radarrConfigured", deps.Radarr != nil,
-		"sonarrConfigured", deps.Sonarr != nil,
+		"arrInstances", reg.Len(),
 		"version", api.Version,
 	)
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

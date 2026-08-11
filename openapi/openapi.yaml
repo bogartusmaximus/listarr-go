@@ -4,7 +4,7 @@ info:
   description: |
     Public listarr-go API. Inspired by fisherd80/Listarr (MIT).
     Safe defaults: loopback listen, apply opt-in, no private host defaults.
-  version: 0.2.0
+  version: 0.3.0
 servers:
   - url: http://127.0.0.1:8787
     description: Local loopback (default)
@@ -12,7 +12,6 @@ paths:
   /health:
     get:
       operationId: health
-      summary: Liveness probe (no auth)
       responses:
         "200":
           description: OK
@@ -24,26 +23,36 @@ paths:
       responses:
         "200":
           description: Status
-        "401":
-          description: Unauthorized
+  /api/v1/arr/instances:
+    get:
+      operationId: listArrInstances
+      summary: Named *arr instances (names/kinds only; no URLs)
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Instance list
+  /api/v1/arr/{name}/importlists:
+    get:
+      operationId: listArrImportLists
+      summary: Import List configs on an instance (metadata)
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Import lists
+        "404":
+          description: Unknown instance
   /api/v1/discover/movies:
     get:
       operationId: discoverMovies
       security:
         - ApiKeyHeader: []
-      parameters:
-        - name: page
-          in: query
-          schema: { type: integer }
-        - name: sort_by
-          in: query
-          schema: { type: string }
-        - name: year
-          in: query
-          schema: { type: integer }
-        - name: vote_average.gte
-          in: query
-          schema: { type: number }
       responses:
         "200":
           description: Discover results
@@ -57,8 +66,6 @@ paths:
       responses:
         "200":
           description: Discover results
-        "503":
-          description: TMDB not configured
   /api/v1/sync/preview:
     post:
       operationId: syncPreview
@@ -73,8 +80,6 @@ paths:
       responses:
         "200":
           description: Preview result
-        "400":
-          description: Invalid request
   /api/v1/sync/apply:
     post:
       operationId: syncApply
@@ -104,30 +109,39 @@ components:
       properties:
         source:
           type: string
-          enum: [tmdb]
+          enum: [tmdb, arr-library]
         mediaType:
           type: string
           enum: [movie, tv]
+        sourceInstance:
+          type: string
+          description: Required when source=arr-library
+        sourceFilter:
+          type: object
+          properties:
+            monitoredOnly: { type: boolean }
+            tagIds:
+              type: array
+              items: { type: integer }
+            pathContains: { type: string }
+            requireAllTags: { type: boolean }
         tmdbIds:
           type: array
           items: { type: integer }
         discover:
           type: object
-          properties:
-            page: { type: integer }
-            sortBy: { type: string }
-            year: { type: integer }
-            voteAverageGte: { type: number }
-            voteCountGte: { type: integer }
         maxItems:
           type: integer
-          maximum: 50
+          maximum: 2000
         target:
           $ref: "#/components/schemas/Target"
     Target:
       type: object
       required: [rootFolderPath, qualityProfileId]
       properties:
+        instance:
+          type: string
+          description: Named registry instance (default radarr/sonarr)
         rootFolderPath:
           type: string
           example: /data/movies
@@ -137,9 +151,6 @@ components:
         tags:
           type: array
           items: { type: integer }
-        monitored:
-          type: boolean
-        searchOnAdd:
-          type: boolean
-        seasonFolder:
-          type: boolean
+        monitored: { type: boolean }
+        searchOnAdd: { type: boolean }
+        seasonFolder: { type: boolean }

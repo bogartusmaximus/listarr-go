@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/bogartusmaximus/listarr-go/internal/arr"
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
 	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
 	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
@@ -13,7 +14,7 @@ import (
 
 const (
 	AppName = "listarr-go"
-	Version = "0.2.0"
+	Version = "0.3.0"
 )
 
 // Config is HTTP-facing runtime configuration.
@@ -24,9 +25,10 @@ type Config struct {
 	SearchBudget *ratelimit.HourlyBudget
 	Runner       *syncjob.Runner
 	TMDB         *tmdb.Client
+	Arr          *arr.Registry
 }
 
-// Server serves health/status, discover, and sync endpoints.
+// Server serves health/status, discover, arr inventory, and sync endpoints.
 type Server struct {
 	cfg Config
 	mux *http.ServeMux
@@ -42,6 +44,8 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/v1/system/status", s.requireAPIKey(s.handleStatus))
 	s.mux.HandleFunc("GET /api/v1/discover/movies", s.requireAPIKey(s.handleDiscoverMovies))
 	s.mux.HandleFunc("GET /api/v1/discover/tv", s.requireAPIKey(s.handleDiscoverTV))
+	s.mux.HandleFunc("GET /api/v1/arr/instances", s.requireAPIKey(s.handleArrInstances))
+	s.mux.HandleFunc("GET /api/v1/arr/{name}/importlists", s.requireAPIKey(s.handleArrImportLists))
 	s.mux.HandleFunc("POST /api/v1/sync/preview", s.requireAPIKey(s.handleSyncPreview))
 	s.mux.HandleFunc("POST /api/v1/sync/apply", s.requireAPIKey(s.handleSyncApply))
 	return s
@@ -63,6 +67,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		remaining = s.cfg.SearchBudget.Remaining()
 		limit = s.cfg.SearchBudget.Limit()
 	}
+	arrCount := 0
+	if s.cfg.Arr != nil {
+		arrCount = s.cfg.Arr.Len()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"appName":               AppName,
 		"version":               Version,
@@ -71,8 +79,44 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		"torboxSearchPerHour":   limit,
 		"torboxSearchRemaining": remaining,
 		"tmdbConfigured":        s.cfg.TMDB != nil,
+		"arrInstances":          arrCount,
 		"syncConfigured":        s.cfg.Runner != nil,
 	})
+}
+
+func (s *Server) handleArrInstances(w http.ResponseWriter, _ *http.Request) {
+	if s.cfg.Arr == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"instances": []arr.InstanceMeta{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"instances": s.cfg.Arr.List()})
+}
+
+func (s *Server) handleArrImportLists(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Arr == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "arr registry not configured"})
+		return
+	}
+	name := r.PathValue("name")
+	if c, err := s.cfg.Arr.Radarr(name); err == nil {
+		lists, err := c.ListImportLists(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"message": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"instance": name, "kind": arr.KindRadarr, "importLists": lists})
+		return
+	}
+	if c, err := s.cfg.Arr.Sonarr(name); err == nil {
+		lists, err := c.ListImportLists(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"message": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"instance": name, "kind": arr.KindSonarr, "importLists": lists})
+		return
+	}
+	writeJSON(w, http.StatusNotFound, map[string]string{"message": "unknown instance"})
 }
 
 func (s *Server) handleDiscoverMovies(w http.ResponseWriter, r *http.Request) {
@@ -85,9 +129,7 @@ func (s *Server) handleDiscoverTV(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) discover(w http.ResponseWriter, r *http.Request, media string) {
 	if s.cfg.TMDB == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"message": "tmdb not configured",
-		})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "tmdb not configured"})
 		return
 	}
 	q := discoverQueryFromRequest(r)
@@ -124,9 +166,7 @@ func (s *Server) handleSyncApply(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) runSync(w http.ResponseWriter, r *http.Request, dryRun bool) {
 	if s.cfg.Runner == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"message": "sync runner not configured",
-		})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "sync runner not configured"})
 		return
 	}
 	var req syncjob.Request
