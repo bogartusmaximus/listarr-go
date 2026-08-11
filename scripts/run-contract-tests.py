@@ -51,6 +51,13 @@ def main() -> int:
     else:
         print("PASS health")
 
+    status, body = request("GET", f"{base}/")
+    if status != 200:
+        print(f"FAIL ui index: status={status}")
+        failures += 1
+    else:
+        print("PASS ui index")
+
     status, _ = request("GET", f"{base}/api/v1/system/status")
     if status != 401:
         print(f"FAIL status unauth: status={status} want=401")

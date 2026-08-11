@@ -12,11 +12,12 @@ import (
 	"github.com/bogartusmaximus/listarr-go/internal/store"
 	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
 	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
+	"github.com/bogartusmaximus/listarr-go/web"
 )
 
 const (
 	AppName = "listarr-go"
-	Version = "0.4.0"
+	Version = "0.5.0"
 )
 
 // Config is HTTP-facing runtime configuration.
@@ -52,7 +53,26 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/v1/activity", s.requireAPIKey(s.handleActivity))
 	s.mux.HandleFunc("POST /api/v1/sync/preview", s.requireAPIKey(s.handleSyncPreview))
 	s.mux.HandleFunc("POST /api/v1/sync/apply", s.requireAPIKey(s.handleSyncApply))
+	s.mountUI()
 	return s
+}
+
+func (s *Server) mountUI() {
+	s.mux.HandleFunc("GET /{$}", s.handleUIIndex)
+	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", web.Assets()))
+}
+
+func (s *Server) handleUIIndex(w http.ResponseWriter, _ *http.Request) {
+	raw, err := web.IndexHTML()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "ui unavailable"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(raw)
 }
 
 // Handler returns the root handler.

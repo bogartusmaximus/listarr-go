@@ -7,7 +7,7 @@ library sync** (local ↔ external) — with TorBox-friendly search-on-add limit
 > Inspired by [fisherd80/Listarr](https://github.com/fisherd80/listarr) (MIT).
 > Clean-room Go implementation; see [NOTICE](NOTICE).
 
-**Status:** v0.4 — sync activity store (Polars default + Postgres; SQLite/MySQL stubbed).
+**Status:** v0.5 — embedded operator web UI for sync/discover/activity testing.
 
 ## Quick start (Docker)
 
@@ -19,7 +19,15 @@ cp .env.docker.example .env
 docker compose up --build
 ```
 
-Then:
+Then open the UI:
+
+```bash
+# browser
+open http://127.0.0.1:8787/
+# paste LISTARR_API_KEY → Connect
+```
+
+Or curl:
 
 ```bash
 curl -s http://127.0.0.1:8787/health
