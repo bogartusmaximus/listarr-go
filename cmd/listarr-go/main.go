@@ -71,7 +71,7 @@ func main() {
 	slog.Info("listarr-go listening",
 		"addr", cfg.Listen,
 		"instance", view.InstanceName,
-		"applyEnabled", view.ApplyEnabled,
+		"safeMode", view.SafeMode,
 		"torboxSearchPerHour", budget.Limit(),
 		"storeBackend", st.Backend(),
 		"tmdbConfigured", view.TMDB != nil,

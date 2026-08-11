@@ -10,6 +10,32 @@ import (
 	"github.com/bogartusmaximus/listarr-go/internal/arr"
 )
 
+func TestConnectionOK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Api-Key") != "k" || r.URL.Path != "/api/v3/system/status" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"appName":"Radarr","version":"5.0.0"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	got, err := arr.TestConnection(context.Background(), arr.KindRadarr, srv.URL, "k", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || got.AppName != "Radarr" || got.Version != "5.0.0" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestConnectionBadKind(t *testing.T) {
+	_, err := arr.TestConnection(context.Background(), arr.Kind("lidarr"), "http://127.0.0.1:7878", "k", nil)
+	if err == nil {
+		t.Fatal("expected kind error")
+	}
+}
+
 func TestRadarrListAndAdd(t *testing.T) {
 	var posted map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

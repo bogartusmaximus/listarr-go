@@ -29,7 +29,7 @@ func SeedFromEnv(cfg config.Config) (store.Settings, error) {
 	}
 	return store.Settings{
 		InstanceName:        cfg.InstanceName,
-		ApplyEnabled:        cfg.ApplyEnabled,
+		SafeMode:            !cfg.ApplyEnabled,
 		TorboxSearchPerHour: cfg.TorboxSearchPerHour,
 		TMDBAPIKey:          cfg.TMDBAPIKey,
 		ArrInstances:        arrs,

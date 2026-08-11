@@ -109,6 +109,35 @@ paths:
       responses:
         "200":
           description: Instance list
+  /api/v1/arr/test:
+    post:
+      operationId: testArrConnection
+      summary: Probe an *arr URL/API key via /api/v3/system/status
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, url, apiKey]
+              properties:
+                name: { type: string }
+                kind:
+                  type: string
+                  enum: [radarr, sonarr]
+                url:
+                  type: string
+                  example: http://127.0.0.1:7878
+                apiKey: { type: string }
+      responses:
+        "200":
+          description: Connection OK
+        "400":
+          description: Validation error
+        "502":
+          description: Upstream *arr unreachable or unauthorized
   /api/v1/arr/{name}/importlists:
     get:
       operationId: listArrImportLists
@@ -186,7 +215,8 @@ components:
       properties:
         apiKey: { type: string }
         instanceName: { type: string }
-        applyEnabled: { type: boolean }
+        applyEnabled: { type: boolean, description: "Inverse of safeMode (writes allowed)" }
+        safeMode: { type: boolean, description: "Read-only when true (default)" }
         torboxSearchPerHour: { type: integer, minimum: 1 }
         tmdbApiKey: { type: string }
         arrInstances:
