@@ -9,6 +9,33 @@ library sync** (local ↔ external) — with TorBox-friendly search-on-add limit
 
 **Status:** v0.4 — sync activity store (Polars default + Postgres; SQLite/MySQL stubbed).
 
+## Quick start (Docker)
+
+On your Docker host as your login user:
+
+```bash
+cp .env.docker.example .env
+# edit LISTARR_API_KEY to a long random string
+docker compose up --build
+```
+
+Then:
+
+```bash
+curl -s http://127.0.0.1:8787/health
+curl -s -H "X-Api-Key: $LISTARR_API_KEY" http://127.0.0.1:8787/api/v1/system/status
+curl -s -H "X-Api-Key: $LISTARR_API_KEY" http://127.0.0.1:8787/api/v1/activity
+```
+
+Smoke script (ephemeral key if unset): `./scripts/docker-smoke.sh`
+
+- Published only on **`127.0.0.1:8787`** (not the LAN).
+- Inside the container listen is `0.0.0.0:8787` so the publish works; the host binary default stays loopback.
+- Optional Postgres: set `LISTARR_STORE_BACKEND=postgres` and
+  `LISTARR_DATABASE_URL=postgres://listarr:listarr@postgres:5432/listarr?sslmode=disable`,
+  then `docker compose --profile postgres up --build`.
+- Reach *arr on the host via `http://host.docker.internal:<port>` (see `.env.docker.example`).
+
 ## Public-repo security
 
 | Rule | Detail |
