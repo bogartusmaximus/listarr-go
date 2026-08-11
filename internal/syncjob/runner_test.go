@@ -32,7 +32,7 @@ func TestPreviewSkipsExistingAndDoesNotConsumeBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	radarr, err := arr.NewRadarr(radarrSrv.URL, "k", nil)
+	radarr, err := arr.NewRadarr(radarrSrv.URL, "k", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestApplyRespectsSearchBudget(t *testing.T) {
 	}))
 	t.Cleanup(radarrSrv.Close)
 
-	radarr, err := arr.NewRadarr(radarrSrv.URL, "k", nil)
+	radarr, err := arr.NewRadarr(radarrSrv.URL, "k", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,8 +134,8 @@ func TestArrLibraryDualInstancePreview(t *testing.T) {
 	}))
 	t.Cleanup(remote.Close)
 
-	localClient, _ := arr.NewRadarr(local.URL, "k", nil)
-	remoteClient, _ := arr.NewRadarr(remote.URL, "k", nil)
+	localClient, _ := arr.NewRadarr(local.URL, "k", "", nil)
+	remoteClient, _ := arr.NewRadarr(remote.URL, "k", "", nil)
 	reg := arr.NewRegistry()
 	_ = reg.RegisterRadarr("local", localClient)
 	_ = reg.RegisterRadarr("remote", remoteClient)

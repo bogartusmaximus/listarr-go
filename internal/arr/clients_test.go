@@ -10,6 +10,31 @@ import (
 	"github.com/bogartusmaximus/listarr-go/internal/arr"
 )
 
+func TestConnectionSendsAuthCookie(t *testing.T) {
+	var gotCookie string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCookie = r.Header.Get("Cookie")
+		if r.Header.Get("X-Api-Key") != "k" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"appName":"Radarr","version":"5.0.0"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cookie := `_oauth2_proxy=example-token|123|sig`
+	got, err := arr.TestConnection(context.Background(), arr.KindRadarr, srv.URL, "k", cookie, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK {
+		t.Fatalf("%+v", got)
+	}
+	if gotCookie != cookie {
+		t.Fatalf("cookie=%q", gotCookie)
+	}
+}
+
 func TestConnectionOK(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Api-Key") != "k" || r.URL.Path != "/api/v3/system/status" {
@@ -20,7 +45,7 @@ func TestConnectionOK(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	got, err := arr.TestConnection(context.Background(), arr.KindRadarr, srv.URL, "k", nil)
+	got, err := arr.TestConnection(context.Background(), arr.KindRadarr, srv.URL, "k", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +55,7 @@ func TestConnectionOK(t *testing.T) {
 }
 
 func TestConnectionBadKind(t *testing.T) {
-	_, err := arr.TestConnection(context.Background(), arr.Kind("lidarr"), "http://127.0.0.1:7878", "k", nil)
+	_, err := arr.TestConnection(context.Background(), arr.Kind("lidarr"), "http://127.0.0.1:7878", "k", "", nil)
 	if err == nil {
 		t.Fatal("expected kind error")
 	}
@@ -58,7 +83,7 @@ func TestRadarrListAndAdd(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	client, err := arr.NewRadarr(srv.URL, "radarr-key", nil)
+	client, err := arr.NewRadarr(srv.URL, "radarr-key", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +121,7 @@ func TestExportMoviesFilter(t *testing.T) {
 		]`))
 	}))
 	t.Cleanup(srv.Close)
-	client, _ := arr.NewRadarr(srv.URL, "k", nil)
+	client, _ := arr.NewRadarr(srv.URL, "k", "", nil)
 	rows, err := client.ExportMovies(context.Background(), arr.LibraryFilter{TagIDs: []int{2}})
 	if err != nil {
 		t.Fatal(err)

@@ -8,7 +8,7 @@ import (
 
 func TestRegistryRegisterAndList(t *testing.T) {
 	reg := arr.NewRegistry()
-	c, err := arr.NewRadarr("http://127.0.0.1:7878", "k", nil)
+	c, err := arr.NewRadarr("http://127.0.0.1:7878", "k", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

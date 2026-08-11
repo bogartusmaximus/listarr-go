@@ -21,10 +21,11 @@ func SeedFromEnv(cfg config.Config) (store.Settings, error) {
 	arrs := make([]store.ArrInstanceSettings, 0, len(instances))
 	for _, c := range instances {
 		arrs = append(arrs, store.ArrInstanceSettings{
-			Name:   c.Name,
-			Kind:   string(c.Kind),
-			URL:    c.URL,
-			APIKey: c.APIKey,
+			Name:       c.Name,
+			Kind:       string(c.Kind),
+			URL:        c.URL,
+			APIKey:     c.APIKey,
+			AuthCookie: c.AuthCookie,
 		})
 	}
 	return store.Settings{
@@ -127,10 +128,11 @@ func Normalize(set store.Settings) store.Settings {
 	out := make([]store.ArrInstanceSettings, 0, len(set.ArrInstances))
 	for _, inst := range set.ArrInstances {
 		out = append(out, store.ArrInstanceSettings{
-			Name:   strings.ToLower(strings.TrimSpace(inst.Name)),
-			Kind:   strings.ToLower(strings.TrimSpace(inst.Kind)),
-			URL:    strings.TrimSpace(inst.URL),
-			APIKey: strings.TrimSpace(inst.APIKey),
+			Name:       strings.ToLower(strings.TrimSpace(inst.Name)),
+			Kind:       strings.ToLower(strings.TrimSpace(inst.Kind)),
+			URL:        strings.TrimSpace(inst.URL),
+			APIKey:     strings.TrimSpace(inst.APIKey),
+			AuthCookie: strings.TrimSpace(inst.AuthCookie),
 		})
 	}
 	set.ArrInstances = out
@@ -142,10 +144,11 @@ func ArrConfigs(set store.Settings) []arr.InstanceConfig {
 	out := make([]arr.InstanceConfig, 0, len(set.ArrInstances))
 	for _, inst := range set.ArrInstances {
 		out = append(out, arr.InstanceConfig{
-			Name:   inst.Name,
-			Kind:   arr.Kind(inst.Kind),
-			URL:    inst.URL,
-			APIKey: inst.APIKey,
+			Name:       inst.Name,
+			Kind:       arr.Kind(inst.Kind),
+			URL:        inst.URL,
+			APIKey:     inst.APIKey,
+			AuthCookie: inst.AuthCookie,
 		})
 	}
 	return out

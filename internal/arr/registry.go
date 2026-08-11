@@ -116,17 +116,18 @@ func (r *Registry) Len() int {
 
 // InstanceConfig is enough to build a client (used for env seed and store settings).
 type InstanceConfig struct {
-	Name   string
-	Kind   Kind
-	URL    string
-	APIKey string
+	Name       string
+	Kind       Kind
+	URL        string
+	APIKey     string
+	AuthCookie string
 }
 
 // LoadRegistry builds a registry from explicit instance configs.
 func LoadRegistry(configs []InstanceConfig, httpClient *httpx.Client) (*Registry, error) {
 	reg := NewRegistry()
 	for _, c := range configs {
-		if err := registerKind(reg, c.Name, c.Kind, c.URL, c.APIKey, httpClient); err != nil {
+		if err := registerKind(reg, c.Name, c.Kind, c.URL, c.APIKey, c.AuthCookie, httpClient); err != nil {
 			return nil, err
 		}
 	}
@@ -157,6 +158,7 @@ func InstancesFromEnv() ([]InstanceConfig, error) {
 		url := strings.TrimSpace(os.Getenv(prefix + "URL"))
 		key := strings.TrimSpace(os.Getenv(prefix + "API_KEY"))
 		kind := Kind(strings.ToLower(strings.TrimSpace(os.Getenv(prefix + "KIND"))))
+		cookie := strings.TrimSpace(os.Getenv(prefix + "AUTH_COOKIE"))
 		if url == "" && key == "" {
 			continue
 		}
@@ -166,7 +168,7 @@ func InstancesFromEnv() ([]InstanceConfig, error) {
 		if kind == "" {
 			return nil, fmt.Errorf("instance %q requires KIND=radarr|sonarr", name)
 		}
-		out = append(out, InstanceConfig{Name: name, Kind: kind, URL: url, APIKey: key})
+		out = append(out, InstanceConfig{Name: name, Kind: kind, URL: url, APIKey: key, AuthCookie: cookie})
 		seen[strings.ToLower(name)] = struct{}{}
 	}
 
@@ -202,16 +204,16 @@ func LoadRegistryFromEnv(httpClient *httpx.Client) (*Registry, error) {
 	return LoadRegistry(cfgs, httpClient)
 }
 
-func registerKind(reg *Registry, name string, kind Kind, url, key string, httpClient *httpx.Client) error {
+func registerKind(reg *Registry, name string, kind Kind, url, key, authCookie string, httpClient *httpx.Client) error {
 	switch kind {
 	case KindRadarr:
-		c, err := NewRadarr(url, key, httpClient)
+		c, err := NewRadarr(url, key, authCookie, httpClient)
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", name, err)
 		}
 		return reg.RegisterRadarr(name, c)
 	case KindSonarr:
-		c, err := NewSonarr(url, key, httpClient)
+		c, err := NewSonarr(url, key, authCookie, httpClient)
 		if err != nil {
 			return fmt.Errorf("instance %q: %w", name, err)
 		}

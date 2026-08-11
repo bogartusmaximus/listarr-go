@@ -33,10 +33,11 @@ type SyncRun struct {
 
 // ArrInstanceSettings is one named *arr target stored in settings.
 type ArrInstanceSettings struct {
-	Name   string `json:"name"`
-	Kind   string `json:"kind"` // radarr|sonarr
-	URL    string `json:"url"`
-	APIKey string `json:"apiKey"`
+	Name       string `json:"name"`
+	Kind       string `json:"kind"` // radarr|sonarr
+	URL        string `json:"url"`
+	APIKey     string `json:"apiKey"`
+	AuthCookie string `json:"authCookie,omitempty"` // optional Cookie header for reverse-proxy auth
 }
 
 // Store is the durable (or test) persistence surface.
