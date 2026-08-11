@@ -41,9 +41,7 @@ func main() {
 		os.Exit(1)
 	}
 	if generatedKey {
-		slog.Warn("generated initial API key — copy from logs or Settings after connect",
-			"apiKey", settings.APIKey,
-		)
+		slog.Info("generated initial API key (view in Settings)")
 	}
 
 	budget := ratelimit.NewHourlyBudget(settings.TorboxSearchPerHour)

@@ -29,6 +29,23 @@ func testRT(apiKey string) *appstate.Runtime {
 	}
 }
 
+func TestUIBootstrapNoAuth(t *testing.T) {
+	srv := api.New(testRT("secret-key"))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ui/bootstrap", nil)
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["apiKey"] != "secret-key" {
+		t.Fatalf("%+v", body)
+	}
+}
+
 func TestHealthNoAuth(t *testing.T) {
 	srv := api.New(testRT("secret"))
 	rec := httptest.NewRecorder()
@@ -54,6 +71,9 @@ func TestUIIndexNoAuth(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "listarr-go") || !strings.Contains(body, "/assets/app.js") || !strings.Contains(body, "Settings") {
 		t.Fatalf("unexpected html: %s", body[:min(200, len(body))])
+	}
+	if strings.Contains(body, "btnConnect") || strings.Contains(body, `id="apiKey"`) {
+		t.Fatal("connect/API key paste UI should be removed")
 	}
 }
 
