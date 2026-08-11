@@ -15,8 +15,9 @@ On your Docker host as your login user:
 
 ```bash
 cp .env.docker.example .env
-# edit LISTARR_API_KEY to a long random string
+# optional: set LISTARR_INSTANCE_NAME and *arr URLs
 docker compose up --build
+docker compose logs listarr   # copy generated apiKey on first boot
 ```
 
 Then open the UI:
@@ -24,18 +25,19 @@ Then open the UI:
 ```bash
 # browser
 open http://127.0.0.1:8787/
-# paste LISTARR_API_KEY → Connect
+# paste API key from logs → Connect → Settings (Show / Copy / Regenerate)
 ```
 
-Or curl:
+Or curl (read key from the store after first boot):
 
 ```bash
 curl -s http://127.0.0.1:8787/health
-curl -s -H "X-Api-Key: $LISTARR_API_KEY" http://127.0.0.1:8787/api/v1/system/status
-curl -s -H "X-Api-Key: $LISTARR_API_KEY" http://127.0.0.1:8787/api/v1/activity
+KEY=$(docker compose exec -T listarr cat /data/polars/settings.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["apiKey"])')
+curl -s -H "X-Api-Key: $KEY" http://127.0.0.1:8787/api/v1/system/status
+curl -s -H "X-Api-Key: $KEY" http://127.0.0.1:8787/api/v1/activity
 ```
 
-Smoke script (ephemeral key if unset): `./scripts/docker-smoke.sh`
+Smoke script: `./scripts/docker-smoke.sh`
 
 - Published only on **`127.0.0.1:8787`** (not the LAN).
 - Inside the container listen is `0.0.0.0:8787` so the publish works; the host binary default stays loopback.
@@ -53,7 +55,7 @@ Smoke script (ephemeral key if unset): `./scripts/docker-smoke.sh`
 
 | Rule | Detail |
 |------|--------|
-| Secrets | Env seeds store; bootstrap (`LISTEN` / store backend) stays env; Settings UI may show secrets to API-key holders |
+| Secrets | API key auto-generated into store on first boot; bootstrap (`LISTEN` / store backend) stays env; Settings UI may show secrets |
 | Apply | Opt-in via Settings (seeded from `LISTARR_APPLY=1`) |
 | Listen | Default `127.0.0.1:8787` |
 | Examples | `127.0.0.1` placeholders only — never private MagicDNS |
@@ -70,7 +72,7 @@ Sync activity and **operator settings** persist through a pluggable store:
 | `postgres` | Production OLTP (`LISTARR_DATABASE_URL` / `DATABASE_URL`) |
 | `sqlite` / `mysql` | Stubbed — clear error until implemented |
 
-On first boot with an empty store, settings are **seeded from `.env`**. Afterwards the datastore is SoT — edit via the Settings tab or `GET`/`PUT /api/v1/settings`. Listen address and store backend/DSN remain env-only (require restart).
+On first boot with an empty store, non-secret settings are **seeded from `.env`** and an **API key is generated** into the datastore (printed once in logs). Afterwards the datastore is SoT — edit via the Settings tab or `GET`/`PUT /api/v1/settings`. Listen address and store backend/DSN remain env-only (require restart).
 
 ```bash
 # Dev / CI (default)
@@ -89,7 +91,7 @@ Recent runs: `GET /api/v1/activity`. Settings: `GET /api/v1/settings`. Polars CS
 Seed two Radarrs via env (first boot), or add them in the Settings UI:
 
 ```bash
-export LISTARR_API_KEY='replace-with-a-long-random-string'
+export LISTARR_INSTANCE_NAME=listarr
 export LISTARR_ARR_LOCAL_URL='http://127.0.0.1:7878'
 export LISTARR_ARR_LOCAL_API_KEY='…'
 export LISTARR_ARR_LOCAL_KIND=radarr
@@ -98,13 +100,15 @@ export LISTARR_ARR_REMOTE_API_KEY='…'
 export LISTARR_ARR_REMOTE_KIND=radarr
 # export LISTARR_APPLY=1   # only when ready to mutate
 go run ./cmd/listarr-go
+# copy apiKey from the "generated initial API key" log line
 ```
 
 Preview titles that exist on `local` (monitored + tag) but not yet on `remote`:
 
 ```bash
+KEY=$(python3 -c "import json; print(json.load(open('data/polars/settings.json'))['apiKey'])")
 curl -s -X POST http://127.0.0.1:8787/api/v1/sync/preview \
-  -H "X-Api-Key: $LISTARR_API_KEY" \
+  -H "X-Api-Key: $KEY" \
   -H 'Content-Type: application/json' \
   -d '{
     "source":"arr-library",
@@ -125,13 +129,13 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/sync/preview \
 List configured instance **names** (no URLs leaked):
 
 ```bash
-curl -s -H "X-Api-Key: $LISTARR_API_KEY" http://127.0.0.1:8787/api/v1/arr/instances
+curl -s -H "X-Api-Key: $KEY" http://127.0.0.1:8787/api/v1/arr/instances
 ```
 
 Import List **configs** on an instance (metadata; title fetch comes next):
 
 ```bash
-curl -s -H "X-Api-Key: $LISTARR_API_KEY" \
+curl -s -H "X-Api-Key: $KEY" \
   http://127.0.0.1:8787/api/v1/arr/local/importlists
 ```
 
@@ -146,7 +150,6 @@ that Import List stamped (`sourceFilter.tagIds`).
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `LISTARR_API_KEY` | required on empty store | Auth |
 | `LISTARR_INSTANCE_NAME` | `listarr` | Display name |
 | `LISTARR_APPLY` | off | Set `1` to seed apply enabled |
 | `LISTARR_TORBOX_SEARCH_PER_HOUR` | `60` | Search budget |
@@ -155,6 +158,8 @@ that Import List stamped (`sourceFilter.tagIds`).
 | `LISTARR_ARR_<NAME>_API_KEY` | none | Named instance |
 | `LISTARR_ARR_<NAME>_KIND` | none | `radarr` or `sonarr` |
 | `LISTARR_RADARR_*` / `LISTARR_SONARR_*` | none | Legacy aliases → names `radarr` / `sonarr` |
+
+**API key:** generated automatically on first boot (not an env var). Shown in startup logs once; thereafter Settings → Show / Copy / Regenerate.
 
 | Always env | Default | Notes |
 |------------|---------|-------|

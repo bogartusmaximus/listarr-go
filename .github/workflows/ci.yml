@@ -30,7 +30,6 @@ jobs:
           uv run --with polars python3 scripts/test_polars_store.py "$dir/sync_runs.csv"
       - name: Contract smoke
         run: |
-          export LISTARR_API_KEY='ci-contract-only-not-a-real-secret'
           export LISTARR_LISTEN='127.0.0.1:18787'
           export LISTARR_STORE_BACKEND=polars
           export LISTARR_POLARS_DIR=$(mktemp -d)
@@ -43,6 +42,7 @@ jobs:
             fi
             sleep 0.2
           done
+          KEY=$(python3 -c "import json; print(json.load(open('$LISTARR_POLARS_DIR/settings.json'))['apiKey'])")
           python3 scripts/run-contract-tests.py \
             --base-url http://127.0.0.1:18787 \
-            --api-key "$LISTARR_API_KEY"
+            --api-key "$KEY"

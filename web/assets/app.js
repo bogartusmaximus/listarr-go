@@ -174,6 +174,12 @@
     return row;
   }
 
+  function generateApiKeyHex() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
   function renderSettings(set) {
     $("setInstanceName").value = set.instanceName || "";
     $("setApiKey").value = set.apiKey || "";
@@ -426,6 +432,16 @@
         }
       });
     }
+    $("btnRegenApiKey").addEventListener("click", () => {
+      if (!window.confirm("Generate a new API key? You must Save settings, then reconnect with the new key.")) {
+        return;
+      }
+      $("setApiKey").value = generateApiKeyHex();
+      $("setApiKey").type = "text";
+      const toggle = document.querySelector('[data-toggle-secret="setApiKey"]');
+      if (toggle) toggle.textContent = "Hide";
+      toast("New API key generated — save to apply");
+    });
     if (apiKey()) {
       connect().catch(() => {
         $("authHint").textContent = "Saved key present — click Connect.";
