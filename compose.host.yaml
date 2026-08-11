@@ -1,0 +1,10 @@
+# Optional override for Linux rootless: use host networking so
+# http://host.docker.internal:7878 reaches host-side arr proxies.
+# Usage: docker compose -f compose.yaml -f compose.host.yaml up -d
+services:
+  listarr:
+    network_mode: host
+    ports: !reset []
+    extra_hosts: !reset []
+    environment:
+      LISTARR_LISTEN: 127.0.0.1:8787
