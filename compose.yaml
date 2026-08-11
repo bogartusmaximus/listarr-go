@@ -1,0 +1,68 @@
+# Local demo / test stack. Publish only on loopback.
+# Usage:
+#   cp .env.docker.example .env   # set LISTARR_API_KEY
+#   docker compose up --build
+# Optional Postgres store:
+#   docker compose --profile postgres up --build
+
+services:
+  listarr:
+    build: .
+    image: listarr-go:local
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      LISTARR_API_KEY: ${LISTARR_API_KEY:?set LISTARR_API_KEY in .env or the environment}
+      LISTARR_LISTEN: 0.0.0.0:8787
+      LISTARR_INSTANCE_NAME: ${LISTARR_INSTANCE_NAME:-listarr-docker}
+      LISTARR_APPLY: ${LISTARR_APPLY:-0}
+      LISTARR_TORBOX_SEARCH_PER_HOUR: ${LISTARR_TORBOX_SEARCH_PER_HOUR:-60}
+      LISTARR_TMDB_API_KEY: ${LISTARR_TMDB_API_KEY:-}
+      LISTARR_STORE_BACKEND: ${LISTARR_STORE_BACKEND:-polars}
+      LISTARR_POLARS_DIR: /data/polars
+      LISTARR_DATABASE_URL: ${LISTARR_DATABASE_URL:-}
+      LISTARR_ARR_LOCAL_URL: ${LISTARR_ARR_LOCAL_URL:-}
+      LISTARR_ARR_LOCAL_API_KEY: ${LISTARR_ARR_LOCAL_API_KEY:-}
+      LISTARR_ARR_LOCAL_KIND: ${LISTARR_ARR_LOCAL_KIND:-}
+      LISTARR_ARR_REMOTE_URL: ${LISTARR_ARR_REMOTE_URL:-}
+      LISTARR_ARR_REMOTE_API_KEY: ${LISTARR_ARR_REMOTE_API_KEY:-}
+      LISTARR_ARR_REMOTE_KIND: ${LISTARR_ARR_REMOTE_KIND:-}
+      LISTARR_RADARR_URL: ${LISTARR_RADARR_URL:-}
+      LISTARR_RADARR_API_KEY: ${LISTARR_RADARR_API_KEY:-}
+      LISTARR_SONARR_URL: ${LISTARR_SONARR_URL:-}
+      LISTARR_SONARR_API_KEY: ${LISTARR_SONARR_API_KEY:-}
+    volumes:
+      - listarr-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: listarr
+      POSTGRES_PASSWORD: listarr
+      POSTGRES_DB: listarr
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - listarr-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listarr -d listarr"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  listarr-data:
+  listarr-pg:
