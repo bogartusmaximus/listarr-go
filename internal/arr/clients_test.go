@@ -19,7 +19,7 @@ func TestRadarrListAndAdd(t *testing.T) {
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/movie":
-			_, _ = w.Write([]byte(`[{"title":"Existing","tmdbId":100}]`))
+			_, _ = w.Write([]byte(`[{"title":"Existing","tmdbId":100,"monitored":true,"tags":[1]}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/movie/lookup":
 			_, _ = w.Write([]byte(`[{"title":"New","tmdbId":550,"year":1999}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/movie":
@@ -59,5 +59,23 @@ func TestRadarrListAndAdd(t *testing.T) {
 	opts, _ := posted["addOptions"].(map[string]any)
 	if opts["searchForMovie"] != true {
 		t.Fatalf("posted=%+v", posted)
+	}
+}
+
+func TestExportMoviesFilter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[
+			{"title":"A","tmdbId":1,"monitored":true,"tags":[2],"path":"/movies/A"},
+			{"title":"B","tmdbId":2,"monitored":true,"tags":[3],"path":"/movies/B"}
+		]`))
+	}))
+	t.Cleanup(srv.Close)
+	client, _ := arr.NewRadarr(srv.URL, "k", nil)
+	rows, err := client.ExportMovies(context.Background(), arr.LibraryFilter{TagIDs: []int{2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].TMDBID != 1 {
+		t.Fatalf("%+v", rows)
 	}
 }

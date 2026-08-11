@@ -14,26 +14,52 @@ import (
 	"github.com/bogartusmaximus/listarr-go/internal/redact"
 )
 
+// MovieRef is a library membership / export record.
+type MovieRef struct {
+	TMDBID    int    `json:"tmdbId"`
+	Title     string `json:"title"`
+	Monitored bool   `json:"monitored"`
+	Tags      []int  `json:"tags,omitempty"`
+	Path      string `json:"path,omitempty"`
+}
+
+// SeriesRef is a library membership / export record.
+type SeriesRef struct {
+	TMDBID    int    `json:"tmdbId"`
+	Title     string `json:"title"`
+	Monitored bool   `json:"monitored"`
+	Tags      []int  `json:"tags,omitempty"`
+	Path      string `json:"path,omitempty"`
+}
+
+// ImportList is a configured *arr Import List (metadata only).
+type ImportList struct {
+	ID                 int    `json:"id"`
+	Name               string `json:"name"`
+	Enabled            bool   `json:"enabled"`
+	EnableAutomaticAdd bool   `json:"enableAutomaticAdd"`
+	Tags               []int  `json:"tags,omitempty"`
+	ListType           string `json:"listType,omitempty"`
+	Implementation     string `json:"implementation,omitempty"`
+}
+
+// LibraryFilter selects a subset of an *arr library (tag/list-shaped sync).
+type LibraryFilter struct {
+	MonitoredOnly  bool   `json:"monitoredOnly,omitempty"`
+	TagIDs         []int  `json:"tagIds,omitempty"`
+	PathContains   string `json:"pathContains,omitempty"`
+	RequireAllTags bool   `json:"requireAllTags,omitempty"`
+}
+
 // Target describes where to place a title in Radarr/Sonarr.
 type Target struct {
+	Instance         string `json:"instance,omitempty"`
 	RootFolderPath   string `json:"rootFolderPath"`
 	QualityProfileID int    `json:"qualityProfileId"`
 	Tags             []int  `json:"tags,omitempty"`
 	Monitored        bool   `json:"monitored"`
 	SearchOnAdd      bool   `json:"searchOnAdd"`
 	SeasonFolder     bool   `json:"seasonFolder,omitempty"`
-}
-
-// MovieRef is a library membership check key.
-type MovieRef struct {
-	TMDBID int
-	Title  string
-}
-
-// SeriesRef is a library membership check key.
-type SeriesRef struct {
-	TMDBID int
-	Title  string
 }
 
 // Radarr talks to Radarr API v3.
@@ -51,12 +77,24 @@ func NewRadarr(baseURL, apiKey string, httpClient *httpx.Client) (*Radarr, error
 	if apiKey == "" {
 		return nil, fmt.Errorf("radarr api key is required")
 	}
-	hc := keyedClient(apiKey, httpClient)
-	return &Radarr{base: base, http: hc}, nil
+	return &Radarr{base: base, http: keyedClient(apiKey, httpClient)}, nil
 }
 
-// ListMovies returns TMDB IDs already in the library.
+// ListMovies returns TMDB-keyed movie refs from the library.
 func (r *Radarr) ListMovies(ctx context.Context) (map[int]MovieRef, error) {
+	rows, err := r.ExportMovies(ctx, LibraryFilter{})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]MovieRef, len(rows))
+	for _, row := range rows {
+		out[row.TMDBID] = row
+	}
+	return out, nil
+}
+
+// ExportMovies returns movies matching an optional filter.
+func (r *Radarr) ExportMovies(ctx context.Context, filter LibraryFilter) ([]MovieRef, error) {
 	rawURL := r.base + "/api/v3/movie"
 	resp, body, err := r.http.DoJSON(ctx, http.MethodGet, rawURL, nil, nil)
 	if err != nil {
@@ -65,19 +103,18 @@ func (r *Radarr) ListMovies(ctx context.Context) (map[int]MovieRef, error) {
 	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
 		return nil, err
 	}
-	var rows []struct {
-		Title  string `json:"title"`
-		TMDBID int    `json:"tmdbId"`
-	}
+	var rows []MovieRef
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("radarr decode movie list: %w", err)
 	}
-	out := make(map[int]MovieRef, len(rows))
+	out := make([]MovieRef, 0, len(rows))
 	for _, row := range rows {
 		if row.TMDBID == 0 {
 			continue
 		}
-		out[row.TMDBID] = MovieRef{TMDBID: row.TMDBID, Title: row.Title}
+		if matchMovie(row, filter) {
+			out = append(out, row)
+		}
 	}
 	return out, nil
 }
@@ -108,9 +145,7 @@ func (r *Radarr) AddMovie(ctx context.Context, lookup map[string]any, target Tar
 	lookup["qualityProfileId"] = target.QualityProfileID
 	lookup["monitored"] = target.Monitored
 	lookup["tags"] = target.Tags
-	lookup["addOptions"] = map[string]any{
-		"searchForMovie": target.SearchOnAdd,
-	}
+	lookup["addOptions"] = map[string]any{"searchForMovie": target.SearchOnAdd}
 	payload, err := json.Marshal(lookup)
 	if err != nil {
 		return err
@@ -123,6 +158,11 @@ func (r *Radarr) AddMovie(ctx context.Context, lookup map[string]any, target Tar
 		return err
 	}
 	return httpx.CheckStatus(resp, rawURL, body)
+}
+
+// ListImportLists returns Import List configurations (not title payloads).
+func (r *Radarr) ListImportLists(ctx context.Context) ([]ImportList, error) {
+	return fetchImportLists(ctx, r.http, r.base)
 }
 
 // Sonarr talks to Sonarr API v3.
@@ -140,12 +180,24 @@ func NewSonarr(baseURL, apiKey string, httpClient *httpx.Client) (*Sonarr, error
 	if apiKey == "" {
 		return nil, fmt.Errorf("sonarr api key is required")
 	}
-	hc := keyedClient(apiKey, httpClient)
-	return &Sonarr{base: base, http: hc}, nil
+	return &Sonarr{base: base, http: keyedClient(apiKey, httpClient)}, nil
 }
 
-// ListSeries returns TMDB IDs already in the library.
+// ListSeries returns TMDB-keyed series refs from the library.
 func (s *Sonarr) ListSeries(ctx context.Context) (map[int]SeriesRef, error) {
+	rows, err := s.ExportSeries(ctx, LibraryFilter{})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]SeriesRef, len(rows))
+	for _, row := range rows {
+		out[row.TMDBID] = row
+	}
+	return out, nil
+}
+
+// ExportSeries returns series matching an optional filter.
+func (s *Sonarr) ExportSeries(ctx context.Context, filter LibraryFilter) ([]SeriesRef, error) {
 	rawURL := s.base + "/api/v3/series"
 	resp, body, err := s.http.DoJSON(ctx, http.MethodGet, rawURL, nil, nil)
 	if err != nil {
@@ -154,19 +206,18 @@ func (s *Sonarr) ListSeries(ctx context.Context) (map[int]SeriesRef, error) {
 	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
 		return nil, err
 	}
-	var rows []struct {
-		Title  string `json:"title"`
-		TMDBID int    `json:"tmdbId"`
-	}
+	var rows []SeriesRef
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("sonarr decode series list: %w", err)
 	}
-	out := make(map[int]SeriesRef, len(rows))
+	out := make([]SeriesRef, 0, len(rows))
 	for _, row := range rows {
 		if row.TMDBID == 0 {
 			continue
 		}
-		out[row.TMDBID] = SeriesRef{TMDBID: row.TMDBID, Title: row.Title}
+		if matchSeries(row, filter) {
+			out = append(out, row)
+		}
 	}
 	return out, nil
 }
@@ -198,9 +249,7 @@ func (s *Sonarr) AddSeries(ctx context.Context, lookup map[string]any, target Ta
 	lookup["monitored"] = target.Monitored
 	lookup["seasonFolder"] = target.SeasonFolder
 	lookup["tags"] = target.Tags
-	lookup["addOptions"] = map[string]any{
-		"searchForMissingEpisodes": target.SearchOnAdd,
-	}
+	lookup["addOptions"] = map[string]any{"searchForMissingEpisodes": target.SearchOnAdd}
 	payload, err := json.Marshal(lookup)
 	if err != nil {
 		return err
@@ -215,19 +264,80 @@ func (s *Sonarr) AddSeries(ctx context.Context, lookup map[string]any, target Ta
 	return httpx.CheckStatus(resp, rawURL, body)
 }
 
+// ListImportLists returns Import List configurations (not title payloads).
+func (s *Sonarr) ListImportLists(ctx context.Context) ([]ImportList, error) {
+	return fetchImportLists(ctx, s.http, s.base)
+}
+
+func fetchImportLists(ctx context.Context, hc *httpx.Client, base string) ([]ImportList, error) {
+	rawURL := base + "/api/v3/importlist"
+	resp, body, err := hc.DoJSON(ctx, http.MethodGet, rawURL, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
+		return nil, err
+	}
+	var rows []ImportList
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, fmt.Errorf("importlist decode: %w", err)
+	}
+	return rows, nil
+}
+
+func matchMovie(row MovieRef, filter LibraryFilter) bool {
+	if filter.MonitoredOnly && !row.Monitored {
+		return false
+	}
+	if filter.PathContains != "" && !strings.Contains(row.Path, filter.PathContains) {
+		return false
+	}
+	return matchTags(row.Tags, filter.TagIDs, filter.RequireAllTags)
+}
+
+func matchSeries(row SeriesRef, filter LibraryFilter) bool {
+	if filter.MonitoredOnly && !row.Monitored {
+		return false
+	}
+	if filter.PathContains != "" && !strings.Contains(row.Path, filter.PathContains) {
+		return false
+	}
+	return matchTags(row.Tags, filter.TagIDs, filter.RequireAllTags)
+}
+
+func matchTags(have, want []int, requireAll bool) bool {
+	if len(want) == 0 {
+		return true
+	}
+	set := make(map[int]struct{}, len(have))
+	for _, t := range have {
+		set[t] = struct{}{}
+	}
+	if requireAll {
+		for _, t := range want {
+			if _, ok := set[t]; !ok {
+				return false
+			}
+		}
+		return true
+	}
+	for _, t := range want {
+		if _, ok := set[t]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func keyedClient(apiKey string, template *httpx.Client) *httpx.Client {
-	timeout := templateTimeout(template)
+	timeout := time.Duration(0)
+	if template != nil {
+		timeout = template.Timeout
+	}
 	hc := httpx.New(timeout)
 	hc.APIKey = apiKey
 	hc.Header = "X-Api-Key"
 	return hc
-}
-
-func templateTimeout(template *httpx.Client) time.Duration {
-	if template == nil {
-		return 0
-	}
-	return template.Timeout
 }
 
 func normalizeBase(raw string) (string, error) {

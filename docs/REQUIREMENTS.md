@@ -1,49 +1,71 @@
 # listarr-go requirements (product SoT)
 
-Locked operator intent (2026-08-11). Homelab-specific deploy notes live in private
-ops docs — **not** in this public repository.
+Locked operator intent (2026-08-11, extended for multi-*arr sync).
+
+Homelab-specific hostnames and credentials live in private ops docs — **not** here.
 
 ## Goal
 
-A standalone Go app that discovers and manages media lists (TMDB / IMDB / Seerr),
-preview/applies them into Radarr/Sonarr (and Seerr), and can drive download
-pipelines with explicit TorBox-friendly rate limits — forever a **tool**, never
-a forced replacement of *arr native Import Lists.
+A standalone Go preview/apply tool that:
+
+1. Discovers titles (TMDB today; IMDB/Seerr next)
+2. **Imports from Radarr/Sonarr libraries** (and, next, any *arr Import List–shaped sources)
+3. Applies into one or more Radarr/Sonarr targets — including **keeping a local and an external *arr pair in sync**
+4. Rate-limits TorBox-oriented `searchOnAdd` (default **60/hour**)
+
+Forever a **tool**, never a forced replacement of *arr native Import Lists.
+
+## First use case (priority)
+
+Synchronize two Radarr instances and two Sonarr instances (local ↔ external):
+
+```text
+source instance library  ──preview/apply──►  target instance
+   (filters: monitored / tags / path)         (root / QP / tags / searchOnAdd)
+```
+
+Operators configure named instances via env (`LISTARR_ARR_<NAME>_…`). Requests
+reference instance **names** only — URLs/keys never appear in sync JSON.
+
+## 2nd / 3rd order thinking
+
+| Order | Intent | Status |
+|-------|--------|--------|
+| 1st | Dual Radarr + dual Sonarr library sync | **v0.3** (`source=arr-library`) |
+| 2nd | Treat *arr **Import Lists** as named sources (tag filters today; list-item fetch next) | Metadata API now; item fetch follows |
+| 3rd | Any *arr family (Lidarr, …) behind the same registry + sync contracts | Kind enum ready; clients later |
+| 3rd | Seerr as both catalog IO and request/pipeline control plane | Phase 2–3 |
+| 3rd | Portable export/import JSON between instances / backups | Follow-on |
+
+Tag-filtered `arr-library` sync is the practical stand-in for “sync this Import List’s
+titles” when lists stamp tags on add.
 
 ## Locked decisions
 
 | Decision | Choice |
 |----------|--------|
-| Feature SoT | [fisherd80/Listarr](https://github.com/fisherd80/listarr) product surface |
+| Feature SoT | [fisherd80/Listarr](https://github.com/fisherd80/listarr) + multi-instance sync |
 | Language | Go |
-| Credit | NOTICE + README |
 | Trakt | Out of scope for now |
 | Stance | Preview/apply tool forever |
-| TorBox search-on-add | On, default **60 items / rolling hour** |
-| Import/export | TMDB, IMDB, Seerr |
-| Seerr | First-class: add/delete + trigger existing Seerr → *arr pipelines |
-| Secrets | Env / local ignore-listed config only; public-repo safe defaults |
-
-## Non-goals (near term)
-
-- Trakt OAuth / Trakt lists
-- Replacing Seerr’s friend/family UI
-- Rewriting Radarr / Sonarr / Prowlarr
-- Shipping anyone’s private hostnames or credentials as defaults
+| TorBox search-on-add | On, default **60 / rolling hour** |
+| Instances | Named registry; no private URL defaults |
+| Secrets | Env only; status endpoints never echo URLs/keys |
 
 ## Phases
 
 | Phase | Scope |
 |-------|--------|
-| 0–1a | Health/status API, apply kill switch, TorBox search rate limiter, public security posture |
-| 1b | TMDB discover + preview/apply → Radarr/Sonarr — **current** |
-| 2 | IMDB + Seerr import/export |
+| 0–1a | Health/status, apply gate, rate limiter |
+| 1b | TMDB discover + single-target *arr apply |
+| **1c** | **Named *arr registry + arr-library dual-instance sync** — **current** |
+| 2 | IMDB + Seerr import/export; Import List item fetch |
 | 3 | Seerr add/delete + pipeline trigger |
-| 4 | UI parity (wizard / activity) + optional MCP |
+| 4 | UI parity + optional MCP |
 
 ## Success metrics
 
-1. Preview never mutates; apply is opt-in and idempotent.
-2. Search-triggering adds stay within the configured hourly budget.
-3. No secrets or private inventory in the default binary or docs examples.
-4. Agents can drive preview/apply over HTTP without a browser.
+1. Preview never mutates; apply is opt-in and idempotent across two Radarrs/Sonarrs.
+2. Search-triggering adds stay within the hourly budget.
+3. No secrets or private inventory in defaults/docs examples.
+4. Agents can drive local→remote sync over HTTP without a browser.

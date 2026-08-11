@@ -24,7 +24,7 @@ func TestPreviewSkipsExistingAndDoesNotConsumeBudget(t *testing.T) {
 	t.Cleanup(tmdbSrv.Close)
 
 	radarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`[{"title":"Existing","tmdbId":100}]`))
+		_, _ = w.Write([]byte(`[{"title":"Existing","tmdbId":100,"monitored":true}]`))
 	}))
 	t.Cleanup(radarrSrv.Close)
 
@@ -36,9 +36,11 @@ func TestPreviewSkipsExistingAndDoesNotConsumeBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reg := arr.NewRegistry()
+	_ = reg.RegisterRadarr("radarr", radarr)
 	budget := ratelimit.NewHourlyBudget(1)
 	runner := syncjob.Runner{Deps: syncjob.Dependencies{
-		TMDB: tmdbClient, Radarr: radarr, SearchBudget: budget,
+		TMDB: tmdbClient, Arr: reg, SearchBudget: budget,
 	}}
 
 	res, err := runner.Run(context.Background(), syncjob.Request{
@@ -94,11 +96,10 @@ func TestApplyRespectsSearchBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	reg := arr.NewRegistry()
+	_ = reg.RegisterRadarr("radarr", radarr)
 	budget := ratelimit.NewHourlyBudget(1)
-	runner := syncjob.Runner{Deps: syncjob.Dependencies{
-		Radarr: radarr, SearchBudget: budget,
-	}}
+	runner := syncjob.Runner{Deps: syncjob.Dependencies{Arr: reg, SearchBudget: budget}}
 	res, err := runner.Run(context.Background(), syncjob.Request{
 		Source:    "tmdb",
 		MediaType: "movie",
@@ -115,5 +116,49 @@ func TestApplyRespectsSearchBudget(t *testing.T) {
 	}
 	if res.Adds != 2 || res.Deferred != 1 || posts != 2 {
 		t.Fatalf("res=%+v posts=%d", res, posts)
+	}
+}
+
+func TestArrLibraryDualInstancePreview(t *testing.T) {
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[
+			{"title":"A","tmdbId":1,"monitored":true,"tags":[9],"path":"/data/movies/A"},
+			{"title":"B","tmdbId":2,"monitored":false,"tags":[],"path":"/data/movies/B"},
+			{"title":"C","tmdbId":3,"monitored":true,"tags":[9],"path":"/data/movies/C"}
+		]`))
+	}))
+	t.Cleanup(local.Close)
+
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"title":"A","tmdbId":1,"monitored":true}]`))
+	}))
+	t.Cleanup(remote.Close)
+
+	localClient, _ := arr.NewRadarr(local.URL, "k", nil)
+	remoteClient, _ := arr.NewRadarr(remote.URL, "k", nil)
+	reg := arr.NewRegistry()
+	_ = reg.RegisterRadarr("local", localClient)
+	_ = reg.RegisterRadarr("remote", remoteClient)
+
+	runner := syncjob.Runner{Deps: syncjob.Dependencies{Arr: reg}}
+	res, err := runner.Run(context.Background(), syncjob.Request{
+		Source:         "arr-library",
+		MediaType:      "movie",
+		SourceInstance: "local",
+		SourceFilter:   arr.LibraryFilter{MonitoredOnly: true, TagIDs: []int{9}},
+		Target: arr.Target{
+			Instance:         "remote",
+			RootFolderPath:   "/data/movies",
+			QualityProfileID: 1,
+			Monitored:        true,
+			SearchOnAdd:      false,
+		},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// local monitored+tag9 => A,C; remote already has A => skip A, add C
+	if res.Skips != 1 || res.Adds != 1 {
+		t.Fatalf("%+v", res)
 	}
 }
