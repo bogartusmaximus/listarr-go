@@ -1,19 +1,18 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/bogartusmaximus/listarr-go/internal/api"
-	"github.com/bogartusmaximus/listarr-go/internal/arr"
+	"github.com/bogartusmaximus/listarr-go/internal/appstate"
 	"github.com/bogartusmaximus/listarr-go/internal/config"
 	"github.com/bogartusmaximus/listarr-go/internal/httpx"
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
 	"github.com/bogartusmaximus/listarr-go/internal/store"
-	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
-	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
 )
 
 func main() {
@@ -34,41 +33,27 @@ func main() {
 	}
 	defer func() { _ = st.Close() }()
 
-	budget := ratelimit.NewHourlyBudget(cfg.TorboxSearchPerHour)
-	httpClient := httpx.New(20 * time.Second)
-
-	reg, err := arr.LoadRegistryFromEnv(httpClient)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	settings, err := appstate.LoadOrSeed(ctx, st, cfg)
+	cancel()
 	if err != nil {
-		slog.Error("arr registry", "err", err)
+		slog.Error("settings", "err", err)
 		os.Exit(1)
 	}
 
-	deps := syncjob.Dependencies{Arr: reg, SearchBudget: budget}
-	var tmdbClient *tmdb.Client
-	if cfg.TMDBAPIKey != "" {
-		tmdbClient, err = tmdb.New(cfg.TMDBAPIKey, "", httpClient)
-		if err != nil {
-			slog.Error("tmdb", "err", err)
-			os.Exit(1)
-		}
-		deps.TMDB = tmdbClient
-	}
-
-	var runner *syncjob.Runner
-	if deps.TMDB != nil || reg.Len() > 0 {
-		runner = &syncjob.Runner{Deps: deps}
-	}
-
-	srv := api.New(api.Config{
-		APIKey:       cfg.APIKey,
-		InstanceName: cfg.InstanceName,
-		ApplyEnabled: cfg.ApplyEnabled,
-		SearchBudget: budget,
-		Runner:       runner,
-		TMDB:         tmdbClient,
-		Arr:          reg,
+	budget := ratelimit.NewHourlyBudget(settings.TorboxSearchPerHour)
+	httpClient := httpx.New(20 * time.Second)
+	rt := &appstate.Runtime{
 		Store:        st,
-	})
+		HTTPClient:   httpClient,
+		SearchBudget: budget,
+	}
+	if err := rt.Apply(settings); err != nil {
+		slog.Error("apply settings", "err", err)
+		os.Exit(1)
+	}
+
+	srv := api.New(rt)
 
 	httpSrv := &http.Server{
 		Addr:              cfg.Listen,
@@ -79,14 +64,15 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	view := rt.View()
 	slog.Info("listarr-go listening",
 		"addr", cfg.Listen,
-		"instance", cfg.InstanceName,
-		"applyEnabled", cfg.ApplyEnabled,
-		"torboxSearchPerHour", cfg.TorboxSearchPerHour,
+		"instance", view.InstanceName,
+		"applyEnabled", view.ApplyEnabled,
+		"torboxSearchPerHour", budget.Limit(),
 		"storeBackend", st.Backend(),
-		"tmdbConfigured", tmdbClient != nil,
-		"arrInstances", reg.Len(),
+		"tmdbConfigured", view.TMDB != nil,
+		"arrInstances", view.Arr.Len(),
 		"version", api.Version,
 	)
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

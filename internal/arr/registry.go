@@ -114,18 +114,34 @@ func (r *Registry) Len() int {
 	return len(r.meta)
 }
 
-// LoadRegistryFromEnv reads LISTARR_ARR_<NAME>_{URL,API_KEY,KIND} plus legacy
-// LISTARR_RADARR_* / LISTARR_SONARR_* aliases (names "radarr" / "sonarr").
-func LoadRegistryFromEnv(httpClient *httpx.Client) (*Registry, error) {
-	reg := NewRegistry()
-	names := map[string]struct{}{}
+// InstanceConfig is enough to build a client (used for env seed and store settings).
+type InstanceConfig struct {
+	Name   string
+	Kind   Kind
+	URL    string
+	APIKey string
+}
 
+// LoadRegistry builds a registry from explicit instance configs.
+func LoadRegistry(configs []InstanceConfig, httpClient *httpx.Client) (*Registry, error) {
+	reg := NewRegistry()
+	for _, c := range configs {
+		if err := registerKind(reg, c.Name, c.Kind, c.URL, c.APIKey, httpClient); err != nil {
+			return nil, err
+		}
+	}
+	return reg, nil
+}
+
+// InstancesFromEnv reads LISTARR_ARR_<NAME>_{URL,API_KEY,KIND} plus legacy
+// LISTARR_RADARR_* / LISTARR_SONARR_* aliases (names "radarr" / "sonarr").
+func InstancesFromEnv() ([]InstanceConfig, error) {
+	names := map[string]struct{}{}
 	for _, env := range os.Environ() {
 		const prefix = "LISTARR_ARR_"
 		if !strings.HasPrefix(env, prefix) || !strings.Contains(env, "_URL=") {
 			continue
 		}
-		// LISTARR_ARR_<NAME>_URL=...
 		rest := strings.TrimPrefix(strings.SplitN(env, "=", 2)[0], prefix)
 		name := strings.TrimSuffix(rest, "_URL")
 		if name == "" || name == rest {
@@ -134,6 +150,8 @@ func LoadRegistryFromEnv(httpClient *httpx.Client) (*Registry, error) {
 		names[strings.ToLower(name)] = struct{}{}
 	}
 
+	out := make([]InstanceConfig, 0, len(names)+2)
+	seen := map[string]struct{}{}
 	for name := range names {
 		prefix := "LISTARR_ARR_" + strings.ToUpper(name) + "_"
 		url := strings.TrimSpace(os.Getenv(prefix + "URL"))
@@ -148,9 +166,8 @@ func LoadRegistryFromEnv(httpClient *httpx.Client) (*Registry, error) {
 		if kind == "" {
 			return nil, fmt.Errorf("instance %q requires KIND=radarr|sonarr", name)
 		}
-		if err := registerKind(reg, name, kind, url, key, httpClient); err != nil {
-			return nil, err
-		}
+		out = append(out, InstanceConfig{Name: name, Kind: kind, URL: url, APIKey: key})
+		seen[strings.ToLower(name)] = struct{}{}
 	}
 
 	if url := strings.TrimSpace(os.Getenv("LISTARR_RADARR_URL")); url != "" {
@@ -158,10 +175,9 @@ func LoadRegistryFromEnv(httpClient *httpx.Client) (*Registry, error) {
 		if key == "" {
 			return nil, fmt.Errorf("LISTARR_RADARR_API_KEY is required when LISTARR_RADARR_URL is set")
 		}
-		if _, exists := reg.meta["radarr"]; !exists {
-			if err := registerKind(reg, "radarr", KindRadarr, url, key, httpClient); err != nil {
-				return nil, err
-			}
+		if _, exists := seen["radarr"]; !exists {
+			out = append(out, InstanceConfig{Name: "radarr", Kind: KindRadarr, URL: url, APIKey: key})
+			seen["radarr"] = struct{}{}
 		}
 	}
 	if url := strings.TrimSpace(os.Getenv("LISTARR_SONARR_URL")); url != "" {
@@ -169,13 +185,21 @@ func LoadRegistryFromEnv(httpClient *httpx.Client) (*Registry, error) {
 		if key == "" {
 			return nil, fmt.Errorf("LISTARR_SONARR_API_KEY is required when LISTARR_SONARR_URL is set")
 		}
-		if _, exists := reg.meta["sonarr"]; !exists {
-			if err := registerKind(reg, "sonarr", KindSonarr, url, key, httpClient); err != nil {
-				return nil, err
-			}
+		if _, exists := seen["sonarr"]; !exists {
+			out = append(out, InstanceConfig{Name: "sonarr", Kind: KindSonarr, URL: url, APIKey: key})
 		}
 	}
-	return reg, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// LoadRegistryFromEnv reads named instances from the environment.
+func LoadRegistryFromEnv(httpClient *httpx.Client) (*Registry, error) {
+	cfgs, err := InstancesFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return LoadRegistry(cfgs, httpClient)
 }
 
 func registerKind(reg *Registry, name string, kind Kind, url, key string, httpClient *httpx.Client) error {

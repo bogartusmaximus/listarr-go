@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -49,7 +50,7 @@ func (s *postgresStore) Ping(ctx context.Context) error {
 }
 
 func (s *postgresStore) migrate(ctx context.Context) error {
-	const q = `
+	const runs = `
 CREATE TABLE IF NOT EXISTS listarr_sync_runs (
   id TEXT PRIMARY KEY,
   dry_run BOOLEAN NOT NULL,
@@ -63,9 +64,59 @@ CREATE TABLE IF NOT EXISTS listarr_sync_runs (
   errors INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`
-	_, err := s.db.ExecContext(ctx, q)
+	if _, err := s.db.ExecContext(ctx, runs); err != nil {
+		return fmt.Errorf("postgres migrate sync runs: %w", err)
+	}
+	const settings = `
+CREATE TABLE IF NOT EXISTS listarr_settings (
+  id SMALLINT PRIMARY KEY CHECK (id = 1),
+  document JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`
+	if _, err := s.db.ExecContext(ctx, settings); err != nil {
+		return fmt.Errorf("postgres migrate settings: %w", err)
+	}
+	return nil
+}
+
+func (s *postgresStore) GetSettings(ctx context.Context) (Settings, bool, error) {
+	var raw []byte
+	err := s.db.QueryRowContext(ctx, `SELECT document FROM listarr_settings WHERE id = 1`).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return Settings{}, false, nil
+	}
 	if err != nil {
-		return fmt.Errorf("postgres migrate: %w", err)
+		return Settings{}, false, fmt.Errorf("postgres get settings: %w", err)
+	}
+	var set Settings
+	if err := json.Unmarshal(raw, &set); err != nil {
+		return Settings{}, false, fmt.Errorf("postgres settings decode: %w", err)
+	}
+	if set.ArrInstances == nil {
+		set.ArrInstances = []ArrInstanceSettings{}
+	}
+	return set, true, nil
+}
+
+func (s *postgresStore) PutSettings(ctx context.Context, settings Settings) error {
+	if settings.UpdatedAt.IsZero() {
+		settings.UpdatedAt = time.Now().UTC()
+	}
+	if settings.ArrInstances == nil {
+		settings.ArrInstances = []ArrInstanceSettings{}
+	}
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO listarr_settings (id, document, updated_at)
+VALUES (1, $1::jsonb, $2)
+ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document, updated_at = EXCLUDED.updated_at`,
+		raw, settings.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("postgres put settings: %w", err)
 	}
 	return nil
 }

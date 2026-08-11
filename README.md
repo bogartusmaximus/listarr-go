@@ -53,8 +53,8 @@ Smoke script (ephemeral key if unset): `./scripts/docker-smoke.sh`
 
 | Rule | Detail |
 |------|--------|
-| Secrets | Env vars only (gitignored `.env`) |
-| Apply | Requires `LISTARR_APPLY=1` |
+| Secrets | Env seeds store; bootstrap (`LISTEN` / store backend) stays env; Settings UI may show secrets to API-key holders |
+| Apply | Opt-in via Settings (seeded from `LISTARR_APPLY=1`) |
 | Listen | Default `127.0.0.1:8787` |
 | Examples | `127.0.0.1` placeholders only — never private MagicDNS |
 
@@ -62,13 +62,15 @@ See [SECURITY.md](SECURITY.md).
 
 ## Store backends
 
-Sync preview/apply runs are persisted through a pluggable store:
+Sync activity and **operator settings** persist through a pluggable store:
 
 | Backend | Role |
 |---------|------|
-| `polars` (default) | In-memory + CSV under `LISTARR_POLARS_DIR` for tests / local dev |
+| `polars` (default) | `sync_runs.csv` + `settings.json` under `LISTARR_POLARS_DIR` |
 | `postgres` | Production OLTP (`LISTARR_DATABASE_URL` / `DATABASE_URL`) |
 | `sqlite` / `mysql` | Stubbed — clear error until implemented |
+
+On first boot with an empty store, settings are **seeded from `.env`**. Afterwards the datastore is SoT — edit via the Settings tab or `GET`/`PUT /api/v1/settings`. Listen address and store backend/DSN remain env-only (require restart).
 
 ```bash
 # Dev / CI (default)
@@ -80,11 +82,11 @@ export LISTARR_STORE_BACKEND=polars
 # export LISTARR_DATABASE_URL='postgres://listarr:…@127.0.0.1:5432/listarr?sslmode=disable'
 ```
 
-Recent runs: `GET /api/v1/activity`. Polars CSV smoke: `uv run --with polars python scripts/test_polars_store.py data/polars/sync_runs.csv`.
+Recent runs: `GET /api/v1/activity`. Settings: `GET /api/v1/settings`. Polars CSV smoke: `uv run --with polars python scripts/test_polars_store.py data/polars/sync_runs.csv`.
 
 ## Dual *arr sync (first use case)
 
-Configure two Radarrs (same pattern for Sonarr):
+Seed two Radarrs via env (first boot), or add them in the Settings UI:
 
 ```bash
 export LISTARR_API_KEY='replace-with-a-long-random-string'
@@ -136,22 +138,30 @@ curl -s -H "X-Api-Key: $LISTARR_API_KEY" \
 Until list-item fetch lands, sync “a list” by filtering the library on the tags
 that Import List stamped (`sourceFilter.tagIds`).
 
-## Configuration (env)
+## Configuration
+
+**Env-only (bootstrap):** `LISTARR_LISTEN`, `LISTARR_STORE_BACKEND`, `LISTARR_DATABASE_URL` / `DATABASE_URL`, `LISTARR_POLARS_DIR`.
+
+**Seeded into the store on first boot** (then edited via Settings / API):
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `LISTARR_API_KEY` | required | Auth |
-| `LISTARR_LISTEN` | `127.0.0.1:8787` | Loopback |
-| `LISTARR_APPLY` | off | Set `1` to mutate |
+| `LISTARR_API_KEY` | required on empty store | Auth |
+| `LISTARR_INSTANCE_NAME` | `listarr` | Display name |
+| `LISTARR_APPLY` | off | Set `1` to seed apply enabled |
 | `LISTARR_TORBOX_SEARCH_PER_HOUR` | `60` | Search budget |
 | `LISTARR_TMDB_API_KEY` | none | Discover |
-| `LISTARR_STORE_BACKEND` | `polars` | `postgres` \| `polars` \| `sqlite` \| `mysql` |
-| `LISTARR_DATABASE_URL` / `DATABASE_URL` | none | Required for `postgres` |
-| `LISTARR_POLARS_DIR` | `data/polars` | CSV dump directory |
 | `LISTARR_ARR_<NAME>_URL` | none | Named instance |
 | `LISTARR_ARR_<NAME>_API_KEY` | none | Named instance |
 | `LISTARR_ARR_<NAME>_KIND` | none | `radarr` or `sonarr` |
 | `LISTARR_RADARR_*` / `LISTARR_SONARR_*` | none | Legacy aliases → names `radarr` / `sonarr` |
+
+| Always env | Default | Notes |
+|------------|---------|-------|
+| `LISTARR_LISTEN` | `127.0.0.1:8787` | Loopback |
+| `LISTARR_STORE_BACKEND` | `polars` | `postgres` \| `polars` \| `sqlite` \| `mysql` |
+| `LISTARR_DATABASE_URL` / `DATABASE_URL` | none | Required for `postgres` |
+| `LISTARR_POLARS_DIR` | `data/polars` | CSV + `settings.json` directory |
 
 ## Goals
 

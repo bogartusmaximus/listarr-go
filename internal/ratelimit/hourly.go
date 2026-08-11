@@ -65,7 +65,20 @@ func (b *HourlyBudget) Remaining() int {
 
 // Limit returns the configured hourly cap.
 func (b *HourlyBudget) Limit() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.limit
+}
+
+// SetLimit updates the hourly cap (hot-reload). limit must be >= 1.
+func (b *HourlyBudget) SetLimit(limit int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if limit < 1 {
+		limit = 1
+	}
+	b.limit = limit
+	b.maxTrack = limit * 2
 }
 
 func (b *HourlyBudget) pruneLocked(now time.Time) {
