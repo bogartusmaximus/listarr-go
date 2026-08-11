@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -58,10 +59,22 @@ func TestStatusRequiresKeyAndReportsBudget(t *testing.T) {
 func TestApplyDisabledReturnsForbidden(t *testing.T) {
 	srv := api.New(api.Config{APIKey: "secret", ApplyEnabled: false})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/demo/apply", nil)
+	body := bytes.NewBufferString(`{"source":"tmdb","mediaType":"movie","tmdbIds":[1],"target":{"rootFolderPath":"/data","qualityProfileId":1}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/apply", body)
 	req.Header.Set("X-Api-Key", "secret")
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status=%d want=403", rec.Code)
+	}
+}
+
+func TestDiscoverWithoutTMDBUnavailable(t *testing.T) {
+	srv := api.New(api.Config{APIKey: "secret"})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/discover/movies", nil)
+	req.Header.Set("X-Api-Key", "secret")
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d", rec.Code)
 	}
 }

@@ -14,13 +14,18 @@ const (
 )
 
 // Config is process configuration loaded from the environment.
-// No service URLs are defaulted — operators must set them when clients exist.
+// Service URLs are optional and never defaulted to private hosts.
 type Config struct {
 	APIKey              string
 	Listen              string
 	InstanceName        string
 	ApplyEnabled        bool
 	TorboxSearchPerHour int
+	TMDBAPIKey          string
+	RadarrURL           string
+	RadarrAPIKey        string
+	SonarrURL           string
+	SonarrAPIKey        string
 }
 
 // Load reads environment variables and validates required fields.
@@ -51,6 +56,11 @@ func Load() (Config, error) {
 		InstanceName:        instance,
 		ApplyEnabled:        os.Getenv("LISTARR_APPLY") == "1",
 		TorboxSearchPerHour: perHour,
+		TMDBAPIKey:          strings.TrimSpace(os.Getenv("LISTARR_TMDB_API_KEY")),
+		RadarrURL:           strings.TrimSpace(os.Getenv("LISTARR_RADARR_URL")),
+		RadarrAPIKey:        strings.TrimSpace(os.Getenv("LISTARR_RADARR_API_KEY")),
+		SonarrURL:           strings.TrimSpace(os.Getenv("LISTARR_SONARR_URL")),
+		SonarrAPIKey:        strings.TrimSpace(os.Getenv("LISTARR_SONARR_API_KEY")),
 	}, nil
 }
 

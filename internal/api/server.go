@@ -4,13 +4,16 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
+	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
+	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
 )
 
 const (
 	AppName = "listarr-go"
-	Version = "0.1.0"
+	Version = "0.2.0"
 )
 
 // Config is HTTP-facing runtime configuration.
@@ -19,9 +22,11 @@ type Config struct {
 	InstanceName string
 	ApplyEnabled bool
 	SearchBudget *ratelimit.HourlyBudget
+	Runner       *syncjob.Runner
+	TMDB         *tmdb.Client
 }
 
-// Server serves health/status and Phase-1 stubs.
+// Server serves health/status, discover, and sync endpoints.
 type Server struct {
 	cfg Config
 	mux *http.ServeMux
@@ -35,8 +40,10 @@ func New(cfg Config) *Server {
 	s := &Server{cfg: cfg, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/system/status", s.requireAPIKey(s.handleStatus))
-	s.mux.HandleFunc("POST /api/v1/sync/{listId}/preview", s.requireAPIKey(s.handlePreviewStub))
-	s.mux.HandleFunc("POST /api/v1/sync/{listId}/apply", s.requireAPIKey(s.handleApplyStub))
+	s.mux.HandleFunc("GET /api/v1/discover/movies", s.requireAPIKey(s.handleDiscoverMovies))
+	s.mux.HandleFunc("GET /api/v1/discover/tv", s.requireAPIKey(s.handleDiscoverTV))
+	s.mux.HandleFunc("POST /api/v1/sync/preview", s.requireAPIKey(s.handleSyncPreview))
+	s.mux.HandleFunc("POST /api/v1/sync/apply", s.requireAPIKey(s.handleSyncApply))
 	return s
 }
 
@@ -63,17 +70,48 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		"applyEnabled":          s.cfg.ApplyEnabled,
 		"torboxSearchPerHour":   limit,
 		"torboxSearchRemaining": remaining,
+		"tmdbConfigured":        s.cfg.TMDB != nil,
+		"syncConfigured":        s.cfg.Runner != nil,
 	})
 }
 
-func (s *Server) handlePreviewStub(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"message":     "not implemented",
-		"description": "list preview arrives with TMDB/IMDB/Seerr clients",
-	})
+func (s *Server) handleDiscoverMovies(w http.ResponseWriter, r *http.Request) {
+	s.discover(w, r, "movie")
 }
 
-func (s *Server) handleApplyStub(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleDiscoverTV(w http.ResponseWriter, r *http.Request) {
+	s.discover(w, r, "tv")
+}
+
+func (s *Server) discover(w http.ResponseWriter, r *http.Request, media string) {
+	if s.cfg.TMDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"message": "tmdb not configured",
+		})
+		return
+	}
+	q := discoverQueryFromRequest(r)
+	var (
+		items []tmdb.Item
+		err   error
+	)
+	if media == "movie" {
+		items, err = s.cfg.TMDB.DiscoverMovies(r.Context(), q)
+	} else {
+		items, err = s.cfg.TMDB.DiscoverTV(r.Context(), q)
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"message": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) handleSyncPreview(w http.ResponseWriter, r *http.Request) {
+	s.runSync(w, r, true)
+}
+
+func (s *Server) handleSyncApply(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.ApplyEnabled {
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"message":     "apply disabled",
@@ -81,10 +119,60 @@ func (s *Server) handleApplyStub(w http.ResponseWriter, _ *http.Request) {
 		})
 		return
 	}
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"message":     "not implemented",
-		"description": "list apply arrives with TMDB/IMDB/Seerr clients",
-	})
+	s.runSync(w, r, false)
+}
+
+func (s *Server) runSync(w http.ResponseWriter, r *http.Request, dryRun bool) {
+	if s.cfg.Runner == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"message": "sync runner not configured",
+		})
+		return
+	}
+	var req syncjob.Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid json"})
+		return
+	}
+	res, err := s.cfg.Runner.Run(r.Context(), req, dryRun)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func discoverQueryFromRequest(r *http.Request) tmdb.DiscoverQuery {
+	q := r.URL.Query()
+	out := tmdb.DiscoverQuery{
+		SortBy:        q.Get("sort_by"),
+		Language:      q.Get("language"),
+		Region:        q.Get("region"),
+		WithGenres:    q.Get("with_genres"),
+		WithoutGenres: q.Get("without_genres"),
+		IncludeAdult:  q.Get("include_adult") == "true",
+	}
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			out.Page = n
+		}
+	}
+	if v := q.Get("year"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			out.Year = n
+		}
+	}
+	if v := q.Get("vote_average.gte"); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil {
+			out.VoteAverageGte = n
+		}
+	}
+	if v := q.Get("vote_count.gte"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			out.VoteCountGte = n
+		}
+	}
+	return out
 }
 
 func (s *Server) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {

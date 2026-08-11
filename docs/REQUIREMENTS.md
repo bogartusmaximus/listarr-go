@@ -35,8 +35,8 @@ a forced replacement of *arr native Import Lists.
 
 | Phase | Scope |
 |-------|--------|
-| 0–1a | Health/status API, apply kill switch, TorBox search rate limiter, public security posture — **this bootstrap** |
-| 1b | TMDB discover + preview/apply → Radarr/Sonarr |
+| 0–1a | Health/status API, apply kill switch, TorBox search rate limiter, public security posture |
+| 1b | TMDB discover + preview/apply → Radarr/Sonarr — **current** |
 | 2 | IMDB + Seerr import/export |
 | 3 | Seerr add/delete + pipeline trigger |
 | 4 | UI parity (wizard / activity) + optional MCP |
