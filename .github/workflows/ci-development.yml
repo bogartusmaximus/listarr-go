@@ -1,0 +1,127 @@
+# Self-hosted deploy on the ci-development runner VM.
+# Register: autobot-homelab/scripts/ci/register-autobot-repo-runners.sh listarr-go --lane development
+#
+# Quality on PRs to ci-development; deploy only on push to ci-development.
+# Do not cancel in-progress deploys (mid-compose tear-down).
+
+name: ci-development
+
+on:
+  push:
+    branches:
+      - ci-development
+  pull_request:
+    branches:
+      - ci-development
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality-ci-development:
+    name: Tests (ci-development)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    runs-on: [self-hosted, Linux, X64, autobot, ci-development]
+    steps:
+      - name: Sanitize workspace before checkout
+        run: |
+          set -euo pipefail
+          work="${GITHUB_WORKSPACE:-}"
+          if [[ -z "$work" ]]; then
+            echo "GITHUB_WORKSPACE unset; skipping sanitize"
+            exit 0
+          fi
+          if [[ ! -d "$work" ]]; then
+            mkdir -p "$work"
+            echo "created empty workspace $work"
+            exit 0
+          fi
+          if sudo -n find "$work" -user root -print -quit 2>/dev/null | grep -q .; then
+            echo "Reclaiming root-owned paths under $work"
+            sudo -n chown -R "$(id -u):$(id -g)" "$work"
+          else
+            echo "No root-owned paths under $work"
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+      - name: Test
+        run: go test ./...
+
+  deploy-ci-development:
+    name: Deploy stack (ci-development)
+    needs: quality-ci-development
+    if: >
+      github.ref == 'refs/heads/ci-development' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: [self-hosted, Linux, X64, autobot, ci-development]
+    concurrency:
+      group: deploy-listarr-go-development
+      cancel-in-progress: false
+    steps:
+      - name: Sanitize workspace before checkout
+        run: |
+          set -euo pipefail
+          work="${GITHUB_WORKSPACE:-}"
+          if [[ -z "$work" ]]; then
+            echo "GITHUB_WORKSPACE unset; skipping sanitize"
+            exit 0
+          fi
+          if [[ ! -d "$work" ]]; then
+            mkdir -p "$work"
+            echo "created empty workspace $work"
+            exit 0
+          fi
+          if sudo -n find "$work" -user root -print -quit 2>/dev/null | grep -q .; then
+            echo "Reclaiming root-owned paths under $work"
+            sudo -n chown -R "$(id -u):$(id -g)" "$work"
+          else
+            echo "No root-owned paths under $work"
+          fi
+      - uses: actions/checkout@v4
+      - name: Preflight development secrets
+        env:
+          CI_DEVELOPMENT_LISTARR_SECRETS_ENV: ${{ secrets.CI_DEVELOPMENT_LISTARR_SECRETS_ENV }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${CI_DEVELOPMENT_LISTARR_SECRETS_ENV:-}" ]]; then
+            echo "CI_DEVELOPMENT_LISTARR_SECRETS_ENV present"
+            exit 0
+          fi
+          if [[ -r /opt/listarr-go-config/tailscale.env ]]; then
+            echo "GitHub secret unset; deploy will use host /opt/listarr-go-config/"
+            exit 0
+          fi
+          echo "Need CI_DEVELOPMENT_LISTARR_SECRETS_ENV or /opt/listarr-go-config/tailscale.env" >&2
+          exit 1
+      - name: Docker compose deploy
+        env:
+          CI_DEVELOPMENT_LISTARR_SECRETS_ENV: ${{ secrets.CI_DEVELOPMENT_LISTARR_SECRETS_ENV }}
+        run: scripts/ci/deploy-development-stack.sh
+      - name: Verify health on loopback
+        run: |
+          set -euo pipefail
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:8787/health" >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$ok" != 1 ]]; then
+            docker compose -f compose.yaml -f compose.ci-development.yaml logs --tail=80
+            echo "health check failed" >&2
+            exit 1
+          fi
+          curl -fsS "http://127.0.0.1:8787/health"

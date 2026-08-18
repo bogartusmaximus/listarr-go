@@ -23,6 +23,8 @@ go.work.sum
 .env.*
 !.env.example
 !.env.docker.example
+!.env.ci.example
+tailscale.env
 *.pem
 *.key
 secrets/

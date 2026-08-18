@@ -1,0 +1,51 @@
+# Self-hosted ci-development overlay (app + Tailscale Serve sidecar).
+# Does not contain private MagicDNS or LAN addresses.
+#
+# Usage on the runner host:
+#   docker compose -f compose.yaml -f compose.ci-development.yaml up -d --build
+#
+# Required: gitignored tailscale.env with TS_AUTHKEY=...
+# Optional: gitignored .env for LISTARR_* seeds (Safe Mode stays on unless LISTARR_APPLY=1).
+# Hostname is the Tailscale node name only (override with TS_HOSTNAME).
+
+services:
+  listarr:
+    image: listarr-go:ci-development
+    container_name: listarr-go-dev
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    environment:
+      LISTARR_LISTEN: 0.0.0.0:8787
+      LISTARR_INSTANCE_NAME: ${LISTARR_INSTANCE_NAME:-listarr-go-dev}
+      LISTARR_APPLY: ${LISTARR_APPLY:-0}
+
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: listarr-go-tailscale-dev
+    restart: unless-stopped
+    depends_on:
+      listarr:
+        condition: service_healthy
+    env_file:
+      - ./tailscale.env
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - listarr-tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      TS_HOSTNAME: ${TS_HOSTNAME:-listarr-go}
+    command: >
+      sh -c "mkdir -p /var/run/tailscale &&
+      tailscaled --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock &
+      for i in $$(seq 1 30); do [ -S /var/run/tailscale/tailscaled.sock ] && break; sleep 1; done &&
+      tailscale --socket=/var/run/tailscale/tailscaled.sock up --hostname=$${TS_HOSTNAME} $${TS_AUTHKEY:+--authkey=$${TS_AUTHKEY}} --accept-dns=false &&
+      tailscale --socket=/var/run/tailscale/tailscaled.sock serve --bg --https=443 http://listarr:8787 &&
+      sleep infinity"
+
+volumes:
+  listarr-tailscale-state:

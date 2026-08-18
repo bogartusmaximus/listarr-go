@@ -4,6 +4,7 @@
 .env.*
 !.env.example
 !.env.docker.example
+!.env.ci.example
 data/
 bin/
 *.test
