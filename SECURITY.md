@@ -16,5 +16,5 @@ If you find a vulnerability in **listarr-go**, open a [GitHub security advisory]
 ## Operators
 
 - Put bootstrap config in environment variables or a gitignored local `.env`; the listarr API key is generated into the store and shown masked in Settings (Show / Copy / Regenerate).
-- Expose the API beyond loopback only behind your own TLS / auth gateway (UI bootstrap would otherwise leak the key).
+- Expose the API beyond loopback only behind your own TLS / auth gateway (UI bootstrap would otherwise leak the key). The ci-development overlay Serves HTTPS via a Tailscale sidecar; keep Safe Mode on until trusted.
 - Treat preview vs apply deliberately; keep Safe Mode on for shared hosts until trusted.

@@ -37,7 +37,18 @@ curl -s -H "X-Api-Key: $KEY" http://127.0.0.1:8787/api/v1/activity
 
 Smoke script: `./scripts/docker-smoke.sh`
 
-- Published only on **`127.0.0.1:8787`** (not the LAN).
+### Self-hosted CI (development)
+
+Push the `ci-development` branch to deploy on a labeled runner
+(`[self-hosted, Linux, X64, autobot, ci-development]`). The overlay
+`compose.ci-development.yaml` adds a Tailscale Serve sidecar. Secrets stay
+out of git (`tailscale.env` / `.env`, or host `/opt/listarr-go-config/`).
+Override the Tailscale node name with `TS_HOSTNAME` (default `listarr-go`).
+Do not commit private MagicDNS or LAN addresses.
+
+A dedicated LXC is out of scope until a stable release.
+
+- Local compose publishes only on **`127.0.0.1:8787`** (not the LAN).
 - Inside the container listen is `0.0.0.0:8787` so the publish works; the host binary default stays loopback.
 - Optional Postgres: set `LISTARR_STORE_BACKEND=postgres` and
   `LISTARR_DATABASE_URL=postgres://listarr:listarr@postgres:5432/listarr?sslmode=disable`,

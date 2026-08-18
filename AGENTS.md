@@ -10,8 +10,13 @@
 
 1. Implement in git on a feature branch; run `go test` / contract checks as needed.
 2. **Commit and push** the branch; open/merge the PR to `main`.
-3. **Do not** start, rebuild, or `docker compose up` containers for the operator.
-4. The operator pulls `main` and runs compose locally, e.g.:
+3. **Do not** start, rebuild, or `docker compose up` on the operator workstation.
+4. **Frequent homelab deploys** use the self-hosted **`ci-development`** runner:
+   fast-forward / push the `ci-development` branch (see `.github/workflows/ci-development.yml`).
+   That stack is app + Tailscale Serve sidecar (`compose.ci-development.yaml`).
+   Do not put private MagicDNS or LAN hosts in this public repo.
+5. **LXC** deploy waits until a stable release. Do not provision a guest for this app yet.
+6. Laptop / local demo stays loopback:
 
 ```bash
 cd listarr-go
