@@ -13,7 +13,7 @@ services:
     image: listarr-go:ci-development
     container_name: listarr-go-dev
     restart: unless-stopped
-    ports: !reset
+    ports: !override
       - "8787:8787"
     env_file:
       - .env
