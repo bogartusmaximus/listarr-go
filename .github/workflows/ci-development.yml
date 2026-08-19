@@ -1,5 +1,7 @@
 # Self-hosted deploy on the ci-development runner VM.
-# Register: autobot-homelab/scripts/ci/register-autobot-repo-runners.sh listarr-go --lane development
+# Deploy path: push → thin GHA job → Semaphore → Ansible on autobot-development.
+# See autobot-homelab/docs/ci/GITHUB-CI-SEMAPHORE-DEPLOY.md
+# Register runner: autobot-homelab/scripts/ci/register-autobot-repo-runners.sh listarr-go --lane development
 #
 # Quality on PRs to ci-development; deploy only on push to ci-development.
 # Do not cancel in-progress deploys (mid-compose tear-down).
@@ -59,7 +61,7 @@ jobs:
         run: go test ./...
 
   deploy-ci-development:
-    name: Deploy stack (ci-development)
+    name: Trigger Semaphore deploy (ci-development)
     needs: quality-ci-development
     if: >
       github.ref == 'refs/heads/ci-development' &&
@@ -69,59 +71,35 @@ jobs:
       group: deploy-listarr-go-development
       cancel-in-progress: false
     steps:
-      - name: Sanitize workspace before checkout
-        run: |
-          set -euo pipefail
-          work="${GITHUB_WORKSPACE:-}"
-          if [[ -z "$work" ]]; then
-            echo "GITHUB_WORKSPACE unset; skipping sanitize"
-            exit 0
-          fi
-          if [[ ! -d "$work" ]]; then
-            mkdir -p "$work"
-            echo "created empty workspace $work"
-            exit 0
-          fi
-          if sudo -n find "$work" -user root -print -quit 2>/dev/null | grep -q .; then
-            echo "Reclaiming root-owned paths under $work"
-            sudo -n chown -R "$(id -u):$(id -g)" "$work"
-          else
-            echo "No root-owned paths under $work"
-          fi
-      - uses: actions/checkout@v4
-      - name: Preflight development secrets
+      - name: Trigger homelab Semaphore deploy
         env:
-          CI_DEVELOPMENT_LISTARR_SECRETS_ENV: ${{ secrets.CI_DEVELOPMENT_LISTARR_SECRETS_ENV }}
+          CI_DEPLOY_TRIGGER_TOKEN: ${{ secrets.CI_DEPLOY_TRIGGER_TOKEN }}
+          CI_DEPLOY_RELAY_URL: https://automation.tailnet-a308.ts.net:8444/hooks/ci-deploy
         run: |
           set -euo pipefail
-          if [[ -n "${CI_DEVELOPMENT_LISTARR_SECRETS_ENV:-}" ]]; then
-            echo "CI_DEVELOPMENT_LISTARR_SECRETS_ENV present"
-            exit 0
-          fi
-          if [[ -r /opt/listarr-go-config/tailscale.env ]]; then
-            echo "GitHub secret unset; deploy will use host /opt/listarr-go-config/"
-            exit 0
-          fi
-          echo "Need CI_DEVELOPMENT_LISTARR_SECRETS_ENV or /opt/listarr-go-config/tailscale.env" >&2
-          exit 1
-      - name: Docker compose deploy
-        env:
-          CI_DEVELOPMENT_LISTARR_SECRETS_ENV: ${{ secrets.CI_DEVELOPMENT_LISTARR_SECRETS_ENV }}
-        run: scripts/ci/deploy-development-stack.sh
-      - name: Verify health on loopback
-        run: |
-          set -euo pipefail
-          ok=0
-          for _ in $(seq 1 30); do
-            if curl -fsS "http://127.0.0.1:8787/health" >/dev/null; then
-              ok=1
-              break
-            fi
-            sleep 2
-          done
-          if [[ "$ok" != 1 ]]; then
-            docker compose -f compose.yaml -f compose.ci-development.yaml logs --tail=80
-            echo "health check failed" >&2
+          if [[ -z "${CI_DEPLOY_TRIGGER_TOKEN:-}" ]]; then
+            echo "CI_DEPLOY_TRIGGER_TOKEN is not set on this repository." >&2
+            echo "Add the secret (same value as automation-gw vault_ci_deploy_trigger_token)." >&2
             exit 1
           fi
-          curl -fsS "http://127.0.0.1:8787/health"
+          payload="$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "ref": os.environ["GITHUB_REF"],
+              "sha": os.environ["GITHUB_SHA"],
+          }))
+          PY
+          )"
+          http_code="$(curl -sS -o /tmp/ci-deploy-trigger.out -w '%{http_code}' \
+            -X POST "${CI_DEPLOY_RELAY_URL}" \
+            -H "Authorization: Bearer ${CI_DEPLOY_TRIGGER_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$payload")"
+          cat /tmp/ci-deploy-trigger.out
+          echo ""
+          if [[ "$http_code" != "202" && "$http_code" != "200" ]]; then
+            echo "Semaphore relay returned HTTP ${http_code}" >&2
+            exit 1
+          fi
+          echo "Queued Semaphore deploy for ${GITHUB_REPOSITORY}@${GITHUB_REF#refs/heads/}"
