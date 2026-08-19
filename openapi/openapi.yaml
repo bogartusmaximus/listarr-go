@@ -4,7 +4,7 @@ info:
   description: |
     Public listarr-go API. Inspired by fisherd80/Listarr (MIT).
     Safe defaults: loopback listen, apply opt-in, no private host defaults.
-  version: 0.5.0
+  version: 0.5.1
 servers:
   - url: http://127.0.0.1:8787
     description: Local loopback (default)
@@ -45,7 +45,7 @@ paths:
         - ApiKeyHeader: []
       responses:
         "200":
-          description: Status (includes storeBackend; no secrets)
+          description: Status (includes storeBackend, plexConfigured; no secrets)
   /api/v1/settings:
     get:
       operationId: getSettings
@@ -141,6 +141,24 @@ paths:
           description: Validation error
         "502":
           description: Upstream *arr unreachable or unauthorized
+  /api/v1/arr/{name}/options:
+    get:
+      operationId: listArrOptions
+      summary: Root folders and quality profiles on a named instance
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Target options
+        "404":
+          description: Unknown instance
+        "502":
+          description: Upstream *arr error
   /api/v1/arr/{name}/importlists:
     get:
       operationId: listArrImportLists

@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -20,7 +22,7 @@ import (
 
 const (
 	AppName = "listarr-go"
-	Version = "0.5.0"
+	Version = "0.5.1"
 )
 
 // Server serves health/status, settings, discover, arr inventory, and sync endpoints.
@@ -45,6 +47,7 @@ func New(rt *appstate.Runtime) *Server {
 	s.mux.HandleFunc("GET /api/v1/arr/instances", s.requireAPIKey(s.handleArrInstances))
 	s.mux.HandleFunc("POST /api/v1/arr/test", s.requireAPIKey(s.handleArrTest))
 	s.mux.HandleFunc("GET /api/v1/arr/{name}/importlists", s.requireAPIKey(s.handleArrImportLists))
+	s.mux.HandleFunc("GET /api/v1/arr/{name}/options", s.requireAPIKey(s.handleArrOptions))
 	s.mux.HandleFunc("POST /api/v1/plex/auth/pin", s.requireAPIKey(s.handlePlexPinCreate))
 	s.mux.HandleFunc("GET /api/v1/plex/auth/pin/{id}", s.requireAPIKey(s.handlePlexPinPoll))
 	s.mux.HandleFunc("DELETE /api/v1/plex/auth", s.requireAPIKey(s.handlePlexUnlink))
@@ -112,6 +115,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	if view.Store != nil {
 		storeBackend = string(view.Store.Backend())
 	}
+	plex := view.Settings.Plex
+	plexConfigured := strings.TrimSpace(plex.Token) != "" || strings.TrimSpace(plex.ServerURL) != ""
 	writeJSON(w, http.StatusOK, map[string]any{
 		"appName":               AppName,
 		"version":               Version,
@@ -121,6 +126,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		"torboxSearchPerHour":   limit,
 		"torboxSearchRemaining": remaining,
 		"tmdbConfigured":        view.TMDB != nil,
+		"plexConfigured":        plexConfigured,
+		"plexAccountUsername":   plex.AccountUsername,
 		"arrInstances":          arrCount,
 		"syncConfigured":        view.Runner != nil,
 		"storeBackend":          storeBackend,
@@ -256,6 +263,66 @@ func (s *Server) handleArrImportLists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"message": "unknown instance"})
+}
+
+func (s *Server) handleArrOptions(w http.ResponseWriter, r *http.Request) {
+	view := s.rt.View()
+	if view.Arr == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "arr registry not configured"})
+		return
+	}
+	name := r.PathValue("name")
+	meta, err := view.Arr.Lookup(name)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": err.Error()})
+		return
+	}
+	roots, profiles, err := listArrTargetOptions(r.Context(), view.Arr, meta)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"message": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"instance":        meta.Name,
+		"kind":            meta.Kind,
+		"rootFolders":     roots,
+		"qualityProfiles": profiles,
+	})
+}
+
+func listArrTargetOptions(ctx context.Context, reg *arr.Registry, meta arr.InstanceMeta) ([]arr.RootFolder, []arr.QualityProfile, error) {
+	switch meta.Kind {
+	case arr.KindRadarr:
+		c, err := reg.Radarr(meta.Name)
+		if err != nil {
+			return nil, nil, err
+		}
+		return collectTargetOptions(ctx, c.ListRootFolders, c.ListQualityProfiles)
+	case arr.KindSonarr:
+		c, err := reg.Sonarr(meta.Name)
+		if err != nil {
+			return nil, nil, err
+		}
+		return collectTargetOptions(ctx, c.ListRootFolders, c.ListQualityProfiles)
+	default:
+		return nil, nil, fmt.Errorf("unsupported kind %q", meta.Kind)
+	}
+}
+
+func collectTargetOptions(
+	ctx context.Context,
+	rootsFn func(context.Context) ([]arr.RootFolder, error),
+	profilesFn func(context.Context) ([]arr.QualityProfile, error),
+) ([]arr.RootFolder, []arr.QualityProfile, error) {
+	roots, err := rootsFn(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	profiles, err := profilesFn(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return roots, profiles, nil
 }
 
 func (s *Server) handleDiscoverMovies(w http.ResponseWriter, r *http.Request) {

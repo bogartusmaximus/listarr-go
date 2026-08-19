@@ -311,7 +311,8 @@ h3 {
   .sync-form {
     grid-template-columns: 1fr 1fr;
   }
-  .sync-form .actions {
+  .sync-form .actions,
+  .sync-form .busy {
     grid-column: 1 / -1;
   }
 }
@@ -470,8 +471,44 @@ legend {
   border-top: 1px solid var(--line);
 }
 
-.arr-advanced-body[hidden] {
+.arr-advanced-body[hidden],
+.advanced-body[hidden],
+.busy[hidden] {
   display: none !important;
+}
+
+.advanced-body {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+}
+
+.busy {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--line);
+  font-weight: 560;
+}
+
+.busy p {
+  margin: 0;
+}
+
+.spinner {
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .plex-pane {

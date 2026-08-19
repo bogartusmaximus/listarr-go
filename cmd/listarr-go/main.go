@@ -63,7 +63,8 @@ func main() {
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      180 * time.Second,
+		// Apply of hundreds of titles is sequential lookup+add; keep this generous.
+		WriteTimeout: 15 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
 

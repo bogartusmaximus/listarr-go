@@ -4,7 +4,11 @@
     status: null,
     instances: [],
     lastSyncPayload: null,
+    lastSettingsJSON: "",
     safeMode: true,
+    syncBusy: false,
+    settingsHydrating: false,
+    autosaveTimer: 0,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -78,9 +82,6 @@
       }
       if (names.includes(prev)) el.value = prev;
     }
-    if (names.includes("local")) $("syncSourceInstance").value = "local";
-    if (names.includes("remote")) $("syncTargetInstance").value = "remote";
-    else if (names.includes("radarr")) $("syncTargetInstance").value = "radarr";
   }
 
   function renderOverview() {
@@ -94,6 +95,7 @@
         : "—";
     $("stStore").textContent = st.storeBackend || "—";
     $("stTmdb").textContent = st.tmdbConfigured ? "configured" : "not set";
+    $("stPlex").textContent = plexOverviewLabel(st);
     $("footVersion").textContent = `listarr-go ${st.version || ""}`.trim();
 
     const ul = $("instanceList");
@@ -111,9 +113,19 @@
     }
   }
 
+  function plexOverviewLabel(st) {
+    if (st.plexAccountUsername) return `linked as ${st.plexAccountUsername}`;
+    if (st.plexConfigured) return "configured";
+    return "not set";
+  }
+
   function setSafeMode(on) {
     state.safeMode = Boolean(on);
-    $("btnApply").disabled = state.safeMode || !state.lastSyncPayload;
+    $("btnApply").disabled = state.safeMode || !state.lastSyncPayload || state.syncBusy;
+    if (state.syncBusy) {
+      $("applyHint").textContent = "Sync in progress…";
+      return;
+    }
     $("applyHint").textContent = state.safeMode
       ? "Apply stays locked while Safe Mode is on."
       : "Safe Mode is off — Apply will write to the target *arr. Preview first.";
@@ -167,7 +179,10 @@
       row.querySelector(".arr-advanced-check").checked = true;
       row.querySelector(".arr-advanced-body").hidden = false;
     }
-    row.querySelector(".arr-remove").addEventListener("click", () => row.remove());
+    row.querySelector(".arr-remove").addEventListener("click", () => {
+      row.remove();
+      scheduleAutosave();
+    });
     row.querySelector(".arr-test").addEventListener("click", () => {
       testArrRow(row).catch((err) => toast(err.message));
     });
@@ -286,16 +301,22 @@
 
   function collectSettings() {
     const arrInstances = [];
+    let incomplete = false;
     for (const row of $("arrInstances").querySelectorAll(".arr-row")) {
       const name = row.querySelector(".arr-name").value.trim();
       const url = row.querySelector(".arr-url").value.trim();
       const apiKey = row.querySelector(".arr-key").value.trim();
       const kind = row.querySelector(".arr-kind").value;
       const authCookie = row.querySelector(".arr-cookie").value.trim();
-      if (!name && !url && !apiKey) continue;
+      if (!name && !url && !apiKey && !authCookie) continue;
+      if (!name || !url || !apiKey) {
+        incomplete = true;
+        continue;
+      }
       arrInstances.push({ name, kind, url, apiKey, authCookie });
     }
     return {
+      incomplete,
       apiKey: $("setApiKey").value.trim(),
       instanceName: $("setInstanceName").value.trim(),
       safeMode: $("setSafeMode").checked,
@@ -309,24 +330,67 @@
     };
   }
 
-  async function loadSettings() {
-    const set = await api("/api/v1/settings");
-    renderSettings(set);
+  function settingsPayload(collected) {
+    return {
+      apiKey: collected.apiKey,
+      instanceName: collected.instanceName,
+      safeMode: collected.safeMode,
+      torboxSearchPerHour: collected.torboxSearchPerHour,
+      tmdbApiKey: collected.tmdbApiKey,
+      plex: collected.plex,
+      arrInstances: collected.arrInstances,
+    };
   }
 
-  async function saveSettings(ev) {
-    ev.preventDefault();
-    const payload = collectSettings();
+  function setSettingsHint(msg) {
+    $("settingsHint").textContent = msg;
+  }
+
+  function scheduleAutosave() {
+    if (state.settingsHydrating) return;
+    window.clearTimeout(state.autosaveTimer);
+    state.autosaveTimer = window.setTimeout(() => {
+      persistSettings().catch((err) => setSettingsHint(err.message));
+    }, 400);
+  }
+
+  async function persistSettings() {
+    if (state.settingsHydrating) return;
+    const collected = collectSettings();
+    if (!collected.apiKey || !collected.instanceName) {
+      setSettingsHint("Instance name and API key are required.");
+      return;
+    }
+    if (collected.incomplete) {
+      setSettingsHint("Finish the instance row (name, URL, API key) to save.");
+      return;
+    }
+    const payload = settingsPayload(collected);
+    const snap = JSON.stringify(payload);
+    if (snap === state.lastSettingsJSON) return;
+    setSettingsHint("Saving…");
     const saved = await api("/api/v1/settings", {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: snap,
     });
     if (saved.apiKey) {
       state.apiKey = saved.apiKey;
     }
-    renderSettings(saved);
+    state.lastSettingsJSON = snap;
     await refresh();
-    toast("Settings saved");
+    setSettingsHint("Saved");
+  }
+
+  async function loadSettings() {
+    state.settingsHydrating = true;
+    try {
+      const set = await api("/api/v1/settings");
+      renderSettings(set);
+      state.lastSettingsJSON = JSON.stringify(settingsPayload(collectSettings()));
+      setSettingsHint("Changes save automatically.");
+    } finally {
+      state.settingsHydrating = false;
+    }
   }
 
   async function refresh() {
@@ -423,13 +487,32 @@
       .replaceAll('"', "&quot;");
   }
 
+  function setSyncBusy(on, message) {
+    state.syncBusy = Boolean(on);
+    $("syncBusy").hidden = !on;
+    if (message) $("syncBusyText").textContent = message;
+    $("btnPreview").disabled = on;
+    setSafeMode(state.safeMode);
+  }
+
   async function runSync(apply) {
     const payload = buildSyncPayload();
-    const path = apply ? "/api/v1/sync/apply" : "/api/v1/sync/preview";
-    const res = await api(path, { method: "POST", body: JSON.stringify(payload) });
-    state.lastSyncPayload = payload;
-    renderSyncResult(res);
-    toast(apply ? "Apply finished" : "Preview ready");
+    const count = payload.maxItems || 100;
+    const label = apply
+      ? `Applying up to ${count} titles — lookup and add can take a few minutes…`
+      : `Building preview of up to ${count} titles…`;
+    setSyncBusy(true, label);
+    $("syncMeta").hidden = false;
+    $("syncMeta").textContent = apply ? "Apply in progress…" : "Preview in progress…";
+    try {
+      const path = apply ? "/api/v1/sync/apply" : "/api/v1/sync/preview";
+      const res = await api(path, { method: "POST", body: JSON.stringify(payload) });
+      state.lastSyncPayload = payload;
+      renderSyncResult(res);
+      toast(apply ? "Apply finished" : "Preview ready");
+    } finally {
+      setSyncBusy(false);
+    }
   }
 
   async function runDiscover(ev) {
@@ -468,30 +551,89 @@
     }
   }
 
-  async function refreshPlexRoots() {
-    const hint = $("syncRootHint");
+  function fillQualityProfiles(profiles) {
+    const el = $("syncQP");
+    const prev = Number(el.value) || 0;
+    el.innerHTML = "";
+    const list = profiles || [];
+    if (!list.length) {
+      const opt = document.createElement("option");
+      opt.value = "1";
+      opt.textContent = "1";
+      el.appendChild(opt);
+      return;
+    }
+    for (const profile of list) {
+      const opt = document.createElement("option");
+      opt.value = String(profile.id);
+      opt.textContent = profile.name ? `${profile.name} (${profile.id})` : String(profile.id);
+      el.appendChild(opt);
+    }
+    const ids = list.map((p) => p.id);
+    el.value = ids.includes(prev) ? String(prev) : String(list[0].id);
+  }
+
+  function addRootOptions(paths, labels) {
     const list = $("syncRootList");
-    list.innerHTML = "";
+    const seen = new Set([...list.querySelectorAll("option")].map((o) => o.value));
+    for (const [i, path] of paths.entries()) {
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      const opt = document.createElement("option");
+      opt.value = path;
+      if (labels && labels[i]) opt.label = labels[i];
+      list.appendChild(opt);
+    }
+  }
+
+  async function refreshTargetOptions() {
+    const hint = $("syncRootHint");
+    $("syncRootList").innerHTML = "";
+    const name = $("syncTargetInstance").value;
+    let arrCount = 0;
+    if (name) {
+      try {
+        const body = await api(`/api/v1/arr/${encodeURIComponent(name)}/options`);
+        const roots = body.rootFolders || [];
+        arrCount = roots.length;
+        fillQualityProfiles(body.qualityProfiles || []);
+        addRootOptions(roots.map((r) => r.path));
+        if (!$("syncRoot").value && roots[0] && roots[0].path) {
+          $("syncRoot").value = roots[0].path;
+        }
+      } catch (err) {
+        fillQualityProfiles([]);
+        hint.textContent = `Target *arr options unavailable (${err.message}).`;
+      }
+    } else {
+      fillQualityProfiles([]);
+    }
+    await refreshPlexRoots(arrCount);
+  }
+
+  async function refreshPlexRoots(arrCount = 0) {
+    const hint = $("syncRootHint");
     const mediaType = $("syncMedia").value === "tv" ? "tv" : "movie";
     try {
       const body = await api(`/api/v1/plex/libraries?mediaType=${encodeURIComponent(mediaType)}`);
       const libs = body.libraries || [];
-      for (const lib of libs) {
-        const opt = document.createElement("option");
-        opt.value = lib.path || "";
-        opt.label = lib.sectionTitle ? `${lib.sectionTitle} (${lib.path})` : lib.path;
-        list.appendChild(opt);
-      }
-      if (libs.length) {
-        hint.textContent = `${libs.length} Plex library path(s) available — pick or type a path.`;
-        if (!$("syncRoot").value && libs[0].path) {
-          $("syncRoot").value = libs[0].path;
-        }
-      } else {
-        hint.textContent = "No matching Plex library paths — type a root folder path.";
+      addRootOptions(
+        libs.map((lib) => lib.path || ""),
+        libs.map((lib) => (lib.sectionTitle ? `${lib.sectionTitle} (${lib.path})` : lib.path)),
+      );
+      const parts = [];
+      if (arrCount) parts.push(`${arrCount} *arr root(s)`);
+      if (libs.length) parts.push(`${libs.length} Plex path(s)`);
+      hint.textContent = parts.length
+        ? `${parts.join(", ")} — pick or type a path.`
+        : "No *arr or Plex paths — type a root folder path.";
+      if (!$("syncRoot").value && libs[0] && libs[0].path) {
+        $("syncRoot").value = libs[0].path;
       }
     } catch (err) {
-      hint.textContent = `Plex libraries unavailable (${err.message}). Type a root folder path.`;
+      hint.textContent = arrCount
+        ? `${arrCount} *arr root(s). Plex unavailable (${err.message}).`
+        : `Plex libraries unavailable (${err.message}). Type a root folder path.`;
     }
   }
 
@@ -507,7 +649,8 @@
       const status = await api(`/api/v1/plex/auth/pin/${pin.id}`);
       if (status.linked) {
         await loadSettings();
-        await refreshPlexRoots();
+        await refresh();
+        await refreshTargetOptions();
         toast(status.accountUsername ? `Linked as ${status.accountUsername}` : "Plex linked");
         return;
       }
@@ -532,6 +675,7 @@
     await api("/api/v1/plex/auth", { method: "DELETE" });
     $("setPlexToken").value = "";
     renderPlexStatus({});
+    await refresh();
     toast("Plex unlinked");
   }
 
@@ -553,7 +697,7 @@
       loadSettings().catch((err) => toast(err.message));
     }
     if (name === "sync" && apiKey()) {
-      refreshPlexRoots().catch(() => {});
+      refreshTargetOptions().catch(() => {});
     }
   }
 
@@ -563,8 +707,17 @@
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
     }
     $("syncSource").addEventListener("change", toggleSourceFields);
+    $("syncSourceAdvanced").addEventListener("change", (ev) => {
+      $("syncSourceAdvancedBody").hidden = !ev.currentTarget.checked;
+    });
+    $("syncTargetAdvanced").addEventListener("change", (ev) => {
+      $("syncTargetAdvancedBody").hidden = !ev.currentTarget.checked;
+    });
     $("syncMedia").addEventListener("change", () => {
-      refreshPlexRoots().catch(() => {});
+      refreshTargetOptions().catch(() => {});
+    });
+    $("syncTargetInstance").addEventListener("change", () => {
+      refreshTargetOptions().catch(() => {});
     });
     $("syncForm").addEventListener("submit", (ev) => {
       ev.preventDefault();
@@ -583,8 +736,13 @@
     $("btnAddArr").addEventListener("click", () => {
       $("arrInstances").appendChild(arrRow());
     });
+    $("settingsForm").addEventListener("input", scheduleAutosave);
+    $("settingsForm").addEventListener("change", () => {
+      persistSettings().catch((err) => setSettingsHint(err.message));
+    });
     $("settingsForm").addEventListener("submit", (ev) => {
-      saveSettings(ev).catch((err) => toast(err.message));
+      ev.preventDefault();
+      persistSettings().catch((err) => setSettingsHint(err.message));
     });
     $("btnPlexLink").addEventListener("click", () => {
       linkPlex().catch((err) => toast(err.message));
@@ -616,14 +774,16 @@
       });
     }
     $("btnRegenApiKey").addEventListener("click", () => {
-      if (!window.confirm("Generate a new API key? Save settings to apply it.")) {
+      if (!window.confirm("Generate a new API key? It replaces the current key immediately.")) {
         return;
       }
       $("setApiKey").value = generateApiKeyHex();
       $("setApiKey").type = "password";
       const toggle = document.querySelector('[data-toggle-secret="setApiKey"]');
       if (toggle) toggle.textContent = "Show";
-      toast("New API key generated — save to apply");
+      persistSettings()
+        .then(() => toast("New API key saved"))
+        .catch((err) => setSettingsHint(err.message));
     });
     bootstrap().catch((err) => {
       $("chipInstance").textContent = "unavailable";

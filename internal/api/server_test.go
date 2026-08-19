@@ -12,6 +12,7 @@ import (
 
 	"github.com/bogartusmaximus/listarr-go/internal/api"
 	"github.com/bogartusmaximus/listarr-go/internal/appstate"
+	"github.com/bogartusmaximus/listarr-go/internal/arr"
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
 	"github.com/bogartusmaximus/listarr-go/internal/store"
 )
@@ -77,6 +78,14 @@ func TestUIIndexNoAuth(t *testing.T) {
 	if strings.Contains(body, "btnConnect") || strings.Contains(body, `id="apiKey"`) {
 		t.Fatal("connect/API key paste UI should be removed")
 	}
+	for _, want := range []string{`id="stPlex"`, `id="syncSourceAdvanced"`, `id="syncTargetAdvanced"`, `id="syncBusy"`, `id="settingsHint"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("html missing %s", want)
+		}
+	}
+	if strings.Contains(body, `id="btnSaveSettings"`) {
+		t.Fatal("save button should be removed; settings autosave")
+	}
 }
 
 func TestUIAssetsNoAuth(t *testing.T) {
@@ -127,6 +136,36 @@ func TestStatusRequiresKeyAndReportsBudget(t *testing.T) {
 	}
 	if _, ok := body["tmdbApiKey"]; ok {
 		t.Fatal("status must not echo tmdbApiKey")
+	}
+	if body["plexConfigured"] != false {
+		t.Fatalf("plexConfigured=%v", body["plexConfigured"])
+	}
+	if _, ok := body["plexToken"]; ok {
+		t.Fatal("status must not echo plexToken")
+	}
+}
+
+func TestStatusReportsPlexConfigured(t *testing.T) {
+	rt := testRT("secret")
+	rt.Settings.Plex.Token = "tok"
+	rt.Settings.Plex.AccountUsername = "bogart"
+	srv := api.New(rt)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/status", nil)
+	req.Header.Set("X-Api-Key", "secret")
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["plexConfigured"] != true {
+		t.Fatalf("plexConfigured=%v", body["plexConfigured"])
+	}
+	if body["plexAccountUsername"] != "bogart" {
+		t.Fatalf("plexAccountUsername=%v", body["plexAccountUsername"])
 	}
 }
 
@@ -266,6 +305,55 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 	got, found, err := st.GetSettings(context.Background())
 	if err != nil || !found || got.InstanceName != "homelab" {
 		t.Fatalf("store found=%v got=%+v err=%v", found, got, err)
+	}
+}
+
+func TestArrOptionsListsRootsAndProfiles(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/rootfolder":
+			_, _ = w.Write([]byte(`[{"path":"/data/movies"}]`))
+		case "/api/v3/qualityprofile":
+			_, _ = w.Write([]byte(`[{"id":4,"name":"HD-1080p"}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	client, err := arr.NewRadarr(upstream.URL, "k", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := arr.NewRegistry()
+	if err := reg.RegisterRadarr("mediavault-radarr", client); err != nil {
+		t.Fatal(err)
+	}
+	rt := testRT("secret")
+	rt.Arr = reg
+	srv := api.New(rt)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/arr/mediavault-radarr/options", nil)
+	req.Header.Set("X-Api-Key", "secret")
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["instance"] != "mediavault-radarr" || body["kind"] != "radarr" {
+		t.Fatalf("%+v", body)
+	}
+	roots, _ := body["rootFolders"].([]any)
+	if len(roots) != 1 {
+		t.Fatalf("rootFolders=%v", body["rootFolders"])
+	}
+	profiles, _ := body["qualityProfiles"].([]any)
+	if len(profiles) != 1 {
+		t.Fatalf("qualityProfiles=%v", body["qualityProfiles"])
 	}
 }
 

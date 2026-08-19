@@ -22,6 +22,10 @@ func TestRegistryRegisterAndList(t *testing.T) {
 	if len(list) != 1 || list[0].Name != "local" || list[0].Kind != arr.KindRadarr {
 		t.Fatalf("%+v", list)
 	}
+	got, err := reg.Lookup("local")
+	if err != nil || got.Kind != arr.KindRadarr {
+		t.Fatalf("lookup=%+v err=%v", got, err)
+	}
 }
 
 func TestLoadRegistryFromEnvLegacyAndNamed(t *testing.T) {
