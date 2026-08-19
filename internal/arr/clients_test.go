@@ -113,6 +113,38 @@ func TestRadarrListAndAdd(t *testing.T) {
 	}
 }
 
+func TestRadarrListRootsAndProfiles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/rootfolder":
+			_, _ = w.Write([]byte(`[{"id":1,"path":"/data/movies","accessible":true}]`))
+		case "/api/v3/qualityprofile":
+			_, _ = w.Write([]byte(`[{"id":6,"name":"HD-1080p"}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	client, err := arr.NewRadarr(srv.URL, "k", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots, err := client.ListRootFolders(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roots) != 1 || roots[0].Path != "/data/movies" {
+		t.Fatalf("roots=%+v", roots)
+	}
+	profiles, err := client.ListQualityProfiles(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 || profiles[0].ID != 6 || profiles[0].Name != "HD-1080p" {
+		t.Fatalf("profiles=%+v", profiles)
+	}
+}
+
 func TestExportMoviesFilter(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[

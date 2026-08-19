@@ -109,6 +109,19 @@ func (r *Registry) Sonarr(name string) (*Sonarr, error) {
 	return c, nil
 }
 
+// Lookup returns public-safe metadata for a named instance.
+func (r *Registry) Lookup(name string) (InstanceMeta, error) {
+	name, err := normalizeName(name)
+	if err != nil {
+		return InstanceMeta{}, err
+	}
+	m, ok := r.meta[name]
+	if !ok {
+		return InstanceMeta{}, fmt.Errorf("unknown instance %q", name)
+	}
+	return m, nil
+}
+
 // Len returns how many instances are registered.
 func (r *Registry) Len() int {
 	return len(r.meta)

@@ -43,6 +43,7 @@
         <div><dt>Search budget</dt><dd id="stBudget">—</dd></div>
         <div><dt>Store</dt><dd id="stStore">—</dd></div>
         <div><dt>TMDB</dt><dd id="stTmdb">—</dd></div>
+        <div><dt>Plex</dt><dd id="stPlex">—</dd></div>
       </dl>
       <h3>Named *arr instances</h3>
       <ul class="instance-list" id="instanceList"></ul>
@@ -76,22 +77,28 @@
             <input type="checkbox" name="monitoredOnly" id="syncMonitored" checked />
             <span>Monitored only</span>
           </label>
-          <label class="field">
-            <span>Tag IDs (comma-separated)</span>
-            <input type="text" name="tagIds" id="syncTagIds" placeholder="1,2" />
+          <label class="field check">
+            <input type="checkbox" id="syncSourceAdvanced" />
+            <span>Advanced options</span>
           </label>
-          <label class="field">
-            <span>Path contains</span>
-            <input type="text" name="pathContains" id="syncPath" placeholder="/movies-torbox" />
-          </label>
-          <label class="field" id="wrapTmdbIds" hidden>
-            <span>TMDB IDs (comma-separated)</span>
-            <input type="text" name="tmdbIds" id="syncTmdbIds" placeholder="550,1396" />
-          </label>
-          <label class="field">
-            <span>Max items</span>
-            <input type="number" name="maxItems" id="syncMax" min="1" max="2000" value="100" />
-          </label>
+          <div class="advanced-body" id="syncSourceAdvancedBody" hidden>
+            <label class="field">
+              <span>Tag IDs (comma-separated)</span>
+              <input type="text" name="tagIds" id="syncTagIds" placeholder="1,2" />
+            </label>
+            <label class="field">
+              <span>Path contains</span>
+              <input type="text" name="pathContains" id="syncPath" placeholder="/movies-torbox" />
+            </label>
+            <label class="field" id="wrapTmdbIds" hidden>
+              <span>TMDB IDs (comma-separated)</span>
+              <input type="text" name="tmdbIds" id="syncTmdbIds" placeholder="550,1396" />
+            </label>
+            <label class="field">
+              <span>Max items</span>
+              <input type="number" name="maxItems" id="syncMax" min="1" max="2000" value="100" />
+            </label>
+          </div>
         </fieldset>
         <fieldset>
           <legend>Target</legend>
@@ -103,33 +110,45 @@
             <span>Root folder path</span>
             <input type="text" name="rootFolderPath" id="syncRoot" list="syncRootList" required placeholder="/data/movies" />
             <datalist id="syncRootList"></datalist>
-            <p class="hint" id="syncRootHint">Paths come from linked Plex libraries when configured.</p>
-          </label>
-          <label class="field">
-            <span>Quality profile ID</span>
-            <input type="number" name="qualityProfileId" id="syncQP" required min="1" value="1" />
-          </label>
-          <label class="field">
-            <span>Target tags (comma-separated)</span>
-            <input type="text" name="targetTags" id="syncTargetTags" />
+            <p class="hint" id="syncRootHint">Paths come from the target *arr (and Plex, when linked).</p>
           </label>
           <label class="field check">
-            <input type="checkbox" name="monitored" id="syncTargetMonitored" checked />
-            <span>Monitored</span>
+            <input type="checkbox" id="syncTargetAdvanced" />
+            <span>Advanced options</span>
           </label>
-          <label class="field check">
-            <input type="checkbox" name="searchOnAdd" id="syncSearchOnAdd" checked />
-            <span>Search on add</span>
-          </label>
-          <label class="field check">
-            <input type="checkbox" name="seasonFolder" id="syncSeasonFolder" />
-            <span>Season folder (tv)</span>
-          </label>
+          <div class="advanced-body" id="syncTargetAdvancedBody" hidden>
+            <label class="field">
+              <span>Quality profile</span>
+              <select name="qualityProfileId" id="syncQP" required>
+                <option value="1">1</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Target tags (comma-separated)</span>
+              <input type="text" name="targetTags" id="syncTargetTags" />
+            </label>
+            <label class="field check">
+              <input type="checkbox" name="monitored" id="syncTargetMonitored" checked />
+              <span>Monitored</span>
+            </label>
+            <label class="field check">
+              <input type="checkbox" name="searchOnAdd" id="syncSearchOnAdd" checked />
+              <span>Search on add</span>
+            </label>
+            <label class="field check">
+              <input type="checkbox" name="seasonFolder" id="syncSeasonFolder" />
+              <span>Season folder (tv)</span>
+            </label>
+          </div>
         </fieldset>
         <div class="actions">
           <button type="submit" class="btn primary" id="btnPreview">Preview</button>
           <button type="button" class="btn danger" id="btnApply" disabled>Apply</button>
           <p class="hint" id="applyHint">Apply stays locked while Safe Mode is on.</p>
+        </div>
+        <div class="busy" id="syncBusy" hidden role="status" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <p id="syncBusyText">Working…</p>
         </div>
       </form>
       <div class="result-meta" id="syncMeta" hidden></div>
@@ -209,7 +228,7 @@
               <button type="button" class="btn" data-copy-secret="setApiKey">Copy</button>
               <button type="button" class="btn" id="btnRegenApiKey">Regenerate</button>
             </div>
-            <p class="hint">Show / Copy / Regenerate — Save settings to apply a regenerated key (agents use X-Api-Key).</p>
+            <p class="hint">Show / Copy / Regenerate — a new key is saved automatically (agents use X-Api-Key).</p>
           </label>
           <label class="field check">
             <input type="checkbox" id="setSafeMode" checked />
@@ -257,10 +276,7 @@
           <div id="arrInstances" class="arr-instances"></div>
           <button type="button" class="btn" id="btnAddArr">Add instance</button>
         </fieldset>
-        <div class="actions">
-          <button type="submit" class="btn primary" id="btnSaveSettings">Save settings</button>
-          <p class="hint" id="settingsHint">Changes apply immediately (listen / store backend still require restart via env).</p>
-        </div>
+        <p class="hint" id="settingsHint">Changes save automatically.</p>
       </form>
     </section>
   </main>

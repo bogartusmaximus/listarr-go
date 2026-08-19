@@ -62,6 +62,17 @@ type Target struct {
 	SeasonFolder     bool   `json:"seasonFolder,omitempty"`
 }
 
+// RootFolder is an *arr library root path.
+type RootFolder struct {
+	Path string `json:"path"`
+}
+
+// QualityProfile is an *arr quality profile.
+type QualityProfile struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
 // Radarr talks to Radarr API v3.
 type Radarr struct {
 	base string
@@ -167,6 +178,16 @@ func (r *Radarr) AddMovie(ctx context.Context, lookup map[string]any, target Tar
 // ListImportLists returns Import List configurations (not title payloads).
 func (r *Radarr) ListImportLists(ctx context.Context) ([]ImportList, error) {
 	return fetchImportLists(ctx, r.http, r.base)
+}
+
+// ListRootFolders returns configured Radarr root folder paths.
+func (r *Radarr) ListRootFolders(ctx context.Context) ([]RootFolder, error) {
+	return fetchRootFolders(ctx, r.http, r.base)
+}
+
+// ListQualityProfiles returns Radarr quality profiles.
+func (r *Radarr) ListQualityProfiles(ctx context.Context) ([]QualityProfile, error) {
+	return fetchQualityProfiles(ctx, r.http, r.base)
 }
 
 // Sonarr talks to Sonarr API v3.
@@ -275,6 +296,62 @@ func (s *Sonarr) AddSeries(ctx context.Context, lookup map[string]any, target Ta
 // ListImportLists returns Import List configurations (not title payloads).
 func (s *Sonarr) ListImportLists(ctx context.Context) ([]ImportList, error) {
 	return fetchImportLists(ctx, s.http, s.base)
+}
+
+// ListRootFolders returns configured Sonarr root folder paths.
+func (s *Sonarr) ListRootFolders(ctx context.Context) ([]RootFolder, error) {
+	return fetchRootFolders(ctx, s.http, s.base)
+}
+
+// ListQualityProfiles returns Sonarr quality profiles.
+func (s *Sonarr) ListQualityProfiles(ctx context.Context) ([]QualityProfile, error) {
+	return fetchQualityProfiles(ctx, s.http, s.base)
+}
+
+func fetchRootFolders(ctx context.Context, hc *httpx.Client, base string) ([]RootFolder, error) {
+	rawURL := base + "/api/v3/rootfolder"
+	resp, body, err := hc.DoJSON(ctx, http.MethodGet, rawURL, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
+		return nil, err
+	}
+	var rows []RootFolder
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, fmt.Errorf("rootfolder decode: %w", err)
+	}
+	out := make([]RootFolder, 0, len(rows))
+	for _, row := range rows {
+		if strings.TrimSpace(row.Path) == "" {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+func fetchQualityProfiles(ctx context.Context, hc *httpx.Client, base string) ([]QualityProfile, error) {
+	rawURL := base + "/api/v3/qualityprofile"
+	resp, body, err := hc.DoJSON(ctx, http.MethodGet, rawURL, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := httpx.CheckStatus(resp, rawURL, body); err != nil {
+		return nil, err
+	}
+	var rows []QualityProfile
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, fmt.Errorf("qualityprofile decode: %w", err)
+	}
+	out := make([]QualityProfile, 0, len(rows))
+	for _, row := range rows {
+		if row.ID < 1 {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out, nil
 }
 
 func fetchImportLists(ctx context.Context, hc *httpx.Client, base string) ([]ImportList, error) {
