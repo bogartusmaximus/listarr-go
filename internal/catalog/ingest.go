@@ -22,14 +22,18 @@ type IngestRequest struct {
 	SourceInstance string            `json:"sourceInstance"`
 	MediaType      string            `json:"mediaType"` // movie|tv
 	Filter         arr.LibraryFilter `json:"sourceFilter"`
-	MaxItems       int               `json:"maxItems,omitempty"`
+	MaxItems       int               `json:"maxItems,omitempty"` // 0 = ingest all (up to IngestHardCap)
 }
+
+const IngestHardCap = 20000
 
 // IngestResult summarizes an ingest run.
 type IngestResult struct {
-	SourceInstance string                  `json:"sourceInstance"`
-	MediaType      string                  `json:"mediaType"`
-	Fetched        int                     `json:"fetched"`
+	SourceInstance string                   `json:"sourceInstance"`
+	MediaType      string                   `json:"mediaType"`
+	Available      int                      `json:"available"`
+	Fetched        int                      `json:"fetched"`
+	Truncated      bool                     `json:"truncated,omitempty"`
 	Upsert         store.CatalogUpsertStats `json:"upsert"`
 }
 
@@ -49,50 +53,10 @@ func (s *Service) IngestFromArr(ctx context.Context, req IngestRequest) (IngestR
 	if req.MediaType != store.CatalogMovie && req.MediaType != store.CatalogTV {
 		return IngestResult{}, fmt.Errorf("mediaType must be movie or tv")
 	}
-	max := req.MaxItems
-	if max <= 0 {
-		max = 2000
+	titles, available, err := s.fetchArrTitles(ctx, req)
+	if err != nil {
+		return IngestResult{}, err
 	}
-	if max > 5000 {
-		max = 5000
-	}
-
-	var titles []store.CatalogTitle
-	switch req.MediaType {
-	case store.CatalogMovie:
-		src, err := s.Arr.Radarr(req.SourceInstance)
-		if err != nil {
-			return IngestResult{}, err
-		}
-		rows, err := src.ExportMovies(ctx, req.Filter)
-		if err != nil {
-			return IngestResult{}, err
-		}
-		if len(rows) > max {
-			rows = rows[:max]
-		}
-		titles = make([]store.CatalogTitle, 0, len(rows))
-		for _, row := range rows {
-			titles = append(titles, movieToCatalog(row, req.SourceInstance))
-		}
-	case store.CatalogTV:
-		src, err := s.Arr.Sonarr(req.SourceInstance)
-		if err != nil {
-			return IngestResult{}, err
-		}
-		rows, err := src.ExportSeries(ctx, req.Filter)
-		if err != nil {
-			return IngestResult{}, err
-		}
-		if len(rows) > max {
-			rows = rows[:max]
-		}
-		titles = make([]store.CatalogTitle, 0, len(rows))
-		for _, row := range rows {
-			titles = append(titles, seriesToCatalog(row, req.SourceInstance))
-		}
-	}
-
 	stats, err := s.Store.UpsertCatalogTitles(ctx, titles)
 	if err != nil {
 		return IngestResult{}, err
@@ -100,9 +64,65 @@ func (s *Service) IngestFromArr(ctx context.Context, req IngestRequest) (IngestR
 	return IngestResult{
 		SourceInstance: req.SourceInstance,
 		MediaType:      req.MediaType,
+		Available:      available,
 		Fetched:        len(titles),
+		Truncated:      available > len(titles),
 		Upsert:         stats,
 	}, nil
+}
+
+func ingestCap(maxItems int) int {
+	if maxItems <= 0 {
+		return IngestHardCap
+	}
+	if maxItems > IngestHardCap {
+		return IngestHardCap
+	}
+	return maxItems
+}
+
+func (s *Service) fetchArrTitles(ctx context.Context, req IngestRequest) ([]store.CatalogTitle, int, error) {
+	max := ingestCap(req.MaxItems)
+	switch req.MediaType {
+	case store.CatalogMovie:
+		src, err := s.Arr.Radarr(req.SourceInstance)
+		if err != nil {
+			return nil, 0, err
+		}
+		rows, err := src.ExportMovies(ctx, req.Filter)
+		if err != nil {
+			return nil, 0, err
+		}
+		available := len(rows)
+		if available > max {
+			rows = rows[:max]
+		}
+		titles := make([]store.CatalogTitle, 0, len(rows))
+		for _, row := range rows {
+			titles = append(titles, movieToCatalog(row, req.SourceInstance))
+		}
+		return titles, available, nil
+	case store.CatalogTV:
+		src, err := s.Arr.Sonarr(req.SourceInstance)
+		if err != nil {
+			return nil, 0, err
+		}
+		rows, err := src.ExportSeries(ctx, req.Filter)
+		if err != nil {
+			return nil, 0, err
+		}
+		available := len(rows)
+		if available > max {
+			rows = rows[:max]
+		}
+		titles := make([]store.CatalogTitle, 0, len(rows))
+		for _, row := range rows {
+			titles = append(titles, seriesToCatalog(row, req.SourceInstance))
+		}
+		return titles, available, nil
+	default:
+		return nil, 0, fmt.Errorf("mediaType must be movie or tv")
+	}
 }
 
 func movieToCatalog(row arr.MovieRef, source string) store.CatalogTitle {

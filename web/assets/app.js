@@ -7,6 +7,8 @@
     lastSettingsJSON: "",
     safeMode: true,
     syncBusy: false,
+    libOffset: 0,
+    libTotal: 0,
     settingsHydrating: false,
     autosaveTimer: 0,
   };
@@ -751,11 +753,14 @@
     toast("Plex unlinked");
   }
 
-  async function loadLibrary() {
+  const libPageSize = 200;
+
+  async function loadLibrary(resetOffset) {
+    if (resetOffset) state.libOffset = 0;
     const media = $("libMedia").value;
     const watched = $("libWatched").value;
     const q = encodeURIComponent($("libQuery").value.trim());
-    let path = `/api/v1/catalog/titles?limit=200&offset=0`;
+    let path = `/api/v1/catalog/titles?limit=${libPageSize}&offset=${state.libOffset}`;
     if (media) path += `&mediaType=${encodeURIComponent(media)}`;
     if (watched !== "all") path += `&watched=${encodeURIComponent(watched)}`;
     if (q) path += `&q=${q}`;
@@ -764,7 +769,16 @@
     const tbody = $("libraryResults").querySelector("tbody");
     tbody.innerHTML = "";
     wrap.hidden = false;
-    $("libMeta").textContent = `${body.total ?? 0} titles · backend ${body.backend || "—"}`;
+    const total = body.total ?? 0;
+    state.libTotal = total;
+    const start = total === 0 ? 0 : state.libOffset + 1;
+    const end = Math.min(state.libOffset + (body.titles || []).length, total);
+    $("libMeta").textContent = `${total} titles in catalog · showing ${start}–${end} · backend ${body.backend || "—"}`;
+    const pager = $("libPager");
+    pager.hidden = total <= libPageSize;
+    $("libPageLabel").textContent = `${start}–${end} of ${total}`;
+    $("btnLibPrev").disabled = state.libOffset <= 0;
+    $("btnLibNext").disabled = state.libOffset + libPageSize >= total;
     for (const title of body.titles || []) {
       const tr = document.createElement("tr");
       const seasons = Array.isArray(title.seasons) ? title.seasons.length : 0;
@@ -779,15 +793,22 @@
     const payload = {
       sourceInstance: $("libIngestInstance").value,
       mediaType: $("libIngestMedia").value,
-      maxItems: 2000,
       sourceFilter: { monitoredOnly: false },
     };
-    const res = await api("/api/v1/catalog/ingest", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    toast(`Ingested ${res.fetched ?? 0} · added ${res.upsert?.added ?? 0} · updated ${res.upsert?.updated ?? 0}`);
-    await loadLibrary();
+    $("btnLibIngest").disabled = true;
+    $("libMeta").textContent = "Ingesting full *arr library…";
+    try {
+      const res = await api("/api/v1/catalog/ingest", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const avail = res.available ?? res.fetched ?? 0;
+      const extra = res.truncated ? ` (truncated at ${res.fetched})` : "";
+      toast(`Ingested ${res.fetched ?? 0} of ${avail}${extra} · added ${res.upsert?.added ?? 0} · updated ${res.upsert?.updated ?? 0}`);
+      await loadLibrary(true);
+    } finally {
+      $("btnLibIngest").disabled = false;
+    }
   }
 
   async function refreshPlexWatched() {
@@ -863,6 +884,14 @@
     });
     $("libraryForm").addEventListener("submit", (ev) => {
       ev.preventDefault();
+      loadLibrary(true).catch((err) => toast(err.message));
+    });
+    $("btnLibPrev").addEventListener("click", () => {
+      state.libOffset = Math.max(0, state.libOffset - libPageSize);
+      loadLibrary().catch((err) => toast(err.message));
+    });
+    $("btnLibNext").addEventListener("click", () => {
+      state.libOffset += libPageSize;
       loadLibrary().catch((err) => toast(err.message));
     });
     $("btnLibIngest").addEventListener("click", () => {

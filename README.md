@@ -110,7 +110,7 @@ as a sync source into Radarr/Sonarr.
 # Pull *arr library into catalog
 curl -s -X POST -H "X-Api-Key: $KEY" -H 'Content-Type: application/json' \
   http://127.0.0.1:8787/api/v1/catalog/ingest \
-  -d '{"sourceInstance":"local","mediaType":"movie","maxItems":2000}'
+  -d '{"sourceInstance":"local","mediaType":"movie"}'
 
 # Refresh watched flags from Plex
 curl -s -X POST -H "X-Api-Key: $KEY" \

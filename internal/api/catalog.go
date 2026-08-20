@@ -85,13 +85,7 @@ func (s *Server) handleCatalogList(w http.ResponseWriter, r *http.Request) {
 }
 
 func clampCatalogListLimit(limit int) int {
-	if limit <= 0 {
-		return 100
-	}
-	if limit > 2000 {
-		return 2000
-	}
-	return limit
+	return store.ClampCatalogLimit(limit)
 }
 
 func (s *Server) handleCatalogGet(w http.ResponseWriter, r *http.Request) {

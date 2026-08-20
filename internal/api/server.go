@@ -22,7 +22,7 @@ import (
 
 const (
 	AppName = "listarr-go"
-	Version = "0.6.0"
+	Version = "0.6.1"
 )
 
 // Server serves health/status, settings, discover, arr inventory, and sync endpoints.
