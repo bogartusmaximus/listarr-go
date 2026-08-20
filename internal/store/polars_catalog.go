@@ -223,7 +223,7 @@ func (s *polarsStore) ListCatalogTitles(_ context.Context, filter CatalogFilter)
 		matched = append(matched, cloneCatalogTitle(row))
 	}
 	total := len(matched)
-	limit := clampCatalogLimit(filter.Limit)
+	limit := ClampCatalogLimit(filter.Limit)
 	offset := filter.Offset
 	if offset < 0 {
 		offset = 0

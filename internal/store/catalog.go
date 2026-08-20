@@ -124,12 +124,15 @@ func CatalogIdentityKey(mediaType string, tmdbID int, imdbID string) string {
 	return fmt.Sprintf("%s:imdb:%s", mediaType, imdbID)
 }
 
-func clampCatalogLimit(limit int) int {
+const CatalogListHardCap = 10000
+
+// ClampCatalogLimit bounds a catalog list page size.
+func ClampCatalogLimit(limit int) int {
 	if limit <= 0 {
 		return 100
 	}
-	if limit > 2000 {
-		return 2000
+	if limit > CatalogListHardCap {
+		return CatalogListHardCap
 	}
 	return limit
 }

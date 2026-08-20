@@ -246,7 +246,7 @@ func (s *postgresStore) ListCatalogTitles(ctx context.Context, filter CatalogFil
 	if err := s.db.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("postgres catalog count: %w", err)
 	}
-	limit := clampCatalogLimit(filter.Limit)
+	limit := ClampCatalogLimit(filter.Limit)
 	offset := filter.Offset
 	if offset < 0 {
 		offset = 0
@@ -310,6 +310,23 @@ func (s *postgresStore) ApplyCatalogWatched(ctx context.Context, patches []Catal
 	return updated, nil
 }
 
+func (s *postgresStore) allCatalogTitles(ctx context.Context) ([]CatalogTitle, error) {
+	const page = 5000
+	const maxPages = 20
+	out := make([]CatalogTitle, 0, page)
+	for i := 0; i < maxPages; i++ {
+		batch, total, err := s.ListCatalogTitles(ctx, CatalogFilter{Limit: page, Offset: i * page})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, batch...)
+		if len(out) >= total || len(batch) == 0 {
+			break
+		}
+	}
+	return out, nil
+}
+
 func (s *postgresStore) mirrorCatalogCSV(ctx context.Context) error {
 	if s.polarsCacheDir == "" {
 		return nil
@@ -317,7 +334,7 @@ func (s *postgresStore) mirrorCatalogCSV(ctx context.Context) error {
 	if err := os.MkdirAll(s.polarsCacheDir, 0o750); err != nil {
 		return err
 	}
-	titles, _, err := s.ListCatalogTitles(ctx, CatalogFilter{Limit: 2000, Offset: 0})
+	titles, err := s.allCatalogTitles(ctx)
 	if err != nil {
 		return err
 	}

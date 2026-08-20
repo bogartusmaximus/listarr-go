@@ -4,7 +4,7 @@ info:
   description: |
     Public listarr-go API. Inspired by fisherd80/Listarr (MIT).
     Safe defaults: loopback listen, apply opt-in, no private host defaults.
-  version: 0.6.0
+  version: 0.6.1
 servers:
   - url: http://127.0.0.1:8787
     description: Local loopback (default)
@@ -249,7 +249,7 @@ paths:
           schema: { type: string }
         - name: limit
           in: query
-          schema: { type: integer, minimum: 1, maximum: 2000, default: 100 }
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 100 }
         - name: offset
           in: query
           schema: { type: integer, minimum: 0, default: 0 }
