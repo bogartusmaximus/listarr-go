@@ -43,3 +43,37 @@ func TestListWatchedParsesGuids(t *testing.T) {
 		t.Fatalf("%+v", items[0])
 	}
 }
+
+func TestListWatchedMixedGuidShapes(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/library/sections", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"MediaContainer":{"Directory":[{"key":"1","type":"movie"}]}}`))
+	})
+	mux.HandleFunc("/library/sections/1/all", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("X-Plex-Container-Start") != "0" {
+			_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[
+			{"ratingKey":"1","title":"A","viewCount":1,"Guid":[{"id":"tmdb://1"}]},
+			{"ratingKey":"2","title":"B","viewCount":1,"Guid":"tmdb://2"},
+			{"ratingKey":"3","title":"C","viewCount":1,"guid":"com.plexapp.agents.imdb://tt0000003?lang=en"}
+		]}}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client, err := plex.New(srv.URL, "token", "client-id", httpx.New(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := client.ListWatched(context.Background(), "movie", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("%+v", items)
+	}
+	if items[0].TMDBID != 1 || items[1].TMDBID != 2 || items[2].IMDBID != "tt0000003" {
+		t.Fatalf("%+v", items)
+	}
+}
