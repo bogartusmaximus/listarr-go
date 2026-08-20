@@ -22,7 +22,7 @@ import (
 
 const (
 	AppName = "listarr-go"
-	Version = "0.6.2"
+	Version = "0.7.0"
 )
 
 // Server serves health/status, settings, discover, arr inventory, and sync endpoints.
@@ -58,6 +58,15 @@ func New(rt *appstate.Runtime) *Server {
 	s.mux.HandleFunc("GET /api/v1/catalog/titles/{id}", s.requireAPIKey(s.handleCatalogGet))
 	s.mux.HandleFunc("POST /api/v1/catalog/ingest", s.requireAPIKey(s.handleCatalogIngest))
 	s.mux.HandleFunc("POST /api/v1/catalog/plex-watched", s.requireAPIKey(s.handleCatalogPlexWatched))
+	s.mux.HandleFunc("POST /api/v1/catalog/bulk", s.requireAPIKey(s.handleCatalogBulk))
+	s.mux.HandleFunc("GET /api/v1/jobs", s.requireAPIKey(s.handleListJobs))
+	s.mux.HandleFunc("POST /api/v1/jobs", s.requireAPIKey(s.handleEnqueueJob))
+	s.mux.HandleFunc("GET /api/v1/jobs/{id}", s.requireAPIKey(s.handleGetJob))
+	s.mux.HandleFunc("GET /api/v1/schedules", s.requireAPIKey(s.handleListSchedules))
+	s.mux.HandleFunc("POST /api/v1/schedules", s.requireAPIKey(s.handlePutSchedule))
+	s.mux.HandleFunc("PUT /api/v1/schedules/{id}", s.requireAPIKey(s.handlePutSchedule))
+	s.mux.HandleFunc("DELETE /api/v1/schedules/{id}", s.requireAPIKey(s.handleDeleteSchedule))
+	s.mux.HandleFunc("POST /api/v1/schedules/{id}/run", s.requireAPIKey(s.handleRunScheduleNow))
 	s.mux.HandleFunc("POST /api/v1/sync/preview", s.requireAPIKey(s.handleSyncPreview))
 	s.mux.HandleFunc("POST /api/v1/sync/apply", s.requireAPIKey(s.handleSyncApply))
 	s.mountUI()
@@ -365,11 +374,13 @@ func (s *Server) handleSyncPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSyncApply(w http.ResponseWriter, r *http.Request) {
+	// Legacy sync/apply remains gated by Safe Mode for manual callers.
+	// Schedules and SyncRoutes use async jobs with their own allowApply.
 	view := s.rt.View()
 	if view.SafeMode {
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"message":     "safe mode enabled",
-			"description": "turn off Safe Mode in Settings to allow Apply writes to *arr",
+			"description": "Safe Mode blocks manual Sync Apply. Use a SyncRoute with allowApply, a Schedule with allowApply, or turn Safe Mode off for the Sync UI default.",
 		})
 		return
 	}

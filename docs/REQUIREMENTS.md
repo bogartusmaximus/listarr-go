@@ -64,7 +64,8 @@ titles” when lists stamp tags on add.
 | 1b | TMDB discover + single-target *arr apply |
 | 1c | Named *arr registry + arr-library dual-instance sync |
 | **1e** | **Embedded operator web UI** (`/`) | shipped |
-| **1f** | **Catalog SoT** — `source=listarr-go`, Patroni/postgres + Polars cache, Plex watched, Library tab | **current** |
+| **1f** | **Catalog SoT** — `source=listarr-go`, Patroni/postgres + Polars cache, Plex watched, Library tab | shipped |
+| **1g** | **Async jobs + schedules** — Sync/ingest/watched as jobs; per-schedule and SyncRoute `allowApply`; Library filters/bulk | **current** |
 | 2 | IMDB + Seerr import/export; Import List item fetch |
 | 3 | Seerr add/delete + pipeline trigger |
 | 4 | UI parity with upstream Listarr + optional MCP |

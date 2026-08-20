@@ -9,10 +9,11 @@ import (
 type Settings struct {
 	APIKey              string                `json:"apiKey"`
 	InstanceName        string                `json:"instanceName"`
-	SafeMode            bool                  `json:"safeMode"`
+	SafeMode            bool                  `json:"safeMode"` // default for manual Sync UI only
 	TorboxSearchPerHour int                   `json:"torboxSearchPerHour"`
 	TMDBAPIKey          string                `json:"tmdbApiKey"`
 	ArrInstances        []ArrInstanceSettings `json:"arrInstances"`
+	SyncRoutes          []SyncRoute           `json:"syncRoutes,omitempty"`
 	Plex                PlexSettings          `json:"plex"`
 	UpdatedAt           time.Time             `json:"updatedAt"`
 }
@@ -33,6 +34,7 @@ type settingsJSON struct {
 	TorboxSearchPerHour int                   `json:"torboxSearchPerHour"`
 	TMDBAPIKey          string                `json:"tmdbApiKey"`
 	ArrInstances        []ArrInstanceSettings `json:"arrInstances"`
+	SyncRoutes          []SyncRoute           `json:"syncRoutes"`
 	Plex                PlexSettings          `json:"plex"`
 	UpdatedAt           time.Time             `json:"updatedAt"`
 }
@@ -49,6 +51,7 @@ func (s *Settings) UnmarshalJSON(data []byte) error {
 	s.TorboxSearchPerHour = raw.TorboxSearchPerHour
 	s.TMDBAPIKey = raw.TMDBAPIKey
 	s.ArrInstances = raw.ArrInstances
+	s.SyncRoutes = raw.SyncRoutes
 	s.Plex = raw.Plex
 	s.UpdatedAt = raw.UpdatedAt
 	switch {
@@ -61,6 +64,9 @@ func (s *Settings) UnmarshalJSON(data []byte) error {
 	}
 	if s.ArrInstances == nil {
 		s.ArrInstances = []ArrInstanceSettings{}
+	}
+	if s.SyncRoutes == nil {
+		s.SyncRoutes = []SyncRoute{}
 	}
 	return nil
 }
