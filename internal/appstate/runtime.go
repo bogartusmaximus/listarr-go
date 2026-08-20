@@ -90,8 +90,8 @@ func (rt *Runtime) Apply(set store.Settings) error {
 	if rt.SearchBudget != nil {
 		rt.SearchBudget.SetLimit(set.TorboxSearchPerHour)
 	}
-	deps := syncjob.Dependencies{Arr: reg, SearchBudget: rt.SearchBudget, TMDB: tmdbClient}
-	if tmdbClient != nil || reg.Len() > 0 {
+	deps := syncjob.Dependencies{Arr: reg, SearchBudget: rt.SearchBudget, TMDB: tmdbClient, Store: rt.Store}
+	if tmdbClient != nil || reg.Len() > 0 || rt.Store != nil {
 		rt.Runner = &syncjob.Runner{Deps: deps}
 	} else {
 		rt.Runner = nil

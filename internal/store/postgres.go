@@ -5,16 +5,18 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type postgresStore struct {
-	db *sql.DB
+	db             *sql.DB
+	polarsCacheDir string
 }
 
-func openPostgres(databaseURL string) (Store, error) {
+func openPostgres(databaseURL, polarsCacheDir string) (Store, error) {
 	if databaseURL == "" {
 		return nil, fmt.Errorf("postgres backend requires LISTARR_DATABASE_URL (or DATABASE_URL)")
 	}
@@ -24,7 +26,7 @@ func openPostgres(databaseURL string) (Store, error) {
 	}
 	db.SetMaxOpenConns(10)
 	db.SetConnMaxLifetime(time.Hour)
-	s := &postgresStore{db: db}
+	s := &postgresStore{db: db, polarsCacheDir: strings.TrimSpace(polarsCacheDir)}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.Ping(ctx); err != nil {
@@ -76,7 +78,7 @@ CREATE TABLE IF NOT EXISTS listarr_settings (
 	if _, err := s.db.ExecContext(ctx, settings); err != nil {
 		return fmt.Errorf("postgres migrate settings: %w", err)
 	}
-	return nil
+	return s.migrateCatalog(ctx)
 }
 
 func (s *postgresStore) GetSettings(ctx context.Context) (Settings, bool, error) {

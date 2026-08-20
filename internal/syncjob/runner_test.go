@@ -10,6 +10,7 @@ import (
 	"github.com/bogartusmaximus/listarr-go/internal/arr"
 	"github.com/bogartusmaximus/listarr-go/internal/httpx"
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
+	"github.com/bogartusmaximus/listarr-go/internal/store"
 	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
 	"github.com/bogartusmaximus/listarr-go/internal/tmdb"
 )
@@ -159,6 +160,48 @@ func TestArrLibraryDualInstancePreview(t *testing.T) {
 	}
 	// local monitored+tag9 => A,C; remote already has A => skip A, add C
 	if res.Skips != 1 || res.Adds != 1 {
+		t.Fatalf("%+v", res)
+	}
+}
+
+func TestListarrGoCatalogSource(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(store.Config{Backend: store.BackendPolars, PolarsDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	_, err = st.UpsertCatalogTitles(context.Background(), []store.CatalogTitle{
+		{MediaType: store.CatalogMovie, TMDBID: 1, Title: "A", Watched: true},
+		{MediaType: store.CatalogMovie, TMDBID: 2, Title: "B", Watched: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	radarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(radarrSrv.Close)
+	radarr, _ := arr.NewRadarr(radarrSrv.URL, "k", "", nil)
+	reg := arr.NewRegistry()
+	_ = reg.RegisterRadarr("radarr", radarr)
+
+	runner := syncjob.Runner{Deps: syncjob.Dependencies{Arr: reg, Store: st}}
+	res, err := runner.Run(context.Background(), syncjob.Request{
+		Source:    "listarr-go",
+		MediaType: "movie",
+		CatalogFilter: syncjob.CatalogSourceFilter{WatchedOnly: true},
+		Target: arr.Target{
+			RootFolderPath:   "/data/movies",
+			QualityProfileID: 1,
+			Monitored:        true,
+		},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Adds != 1 || len(res.Items) != 1 || res.Items[0].TMDBID != 1 {
 		t.Fatalf("%+v", res)
 	}
 }

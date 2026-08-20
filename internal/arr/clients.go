@@ -16,20 +16,47 @@ import (
 
 // MovieRef is a library membership / export record.
 type MovieRef struct {
-	TMDBID    int    `json:"tmdbId"`
-	Title     string `json:"title"`
-	Monitored bool   `json:"monitored"`
-	Tags      []int  `json:"tags,omitempty"`
-	Path      string `json:"path,omitempty"`
+	TMDBID     int             `json:"tmdbId"`
+	IMDBID     string          `json:"imdbId,omitempty"`
+	Title      string          `json:"title"`
+	Year       int             `json:"year,omitempty"`
+	Overview   string          `json:"overview,omitempty"`
+	Monitored  bool            `json:"monitored"`
+	Tags       []int           `json:"tags,omitempty"`
+	Path       string          `json:"path,omitempty"`
+	Collection *CollectionRef  `json:"collection,omitempty"`
+}
+
+// CollectionRef is a Radarr movie collection membership.
+type CollectionRef struct {
+	TMDBID int    `json:"tmdbId,omitempty"`
+	Title  string `json:"title,omitempty"`
 }
 
 // SeriesRef is a library membership / export record.
 type SeriesRef struct {
-	TMDBID    int    `json:"tmdbId"`
-	Title     string `json:"title"`
-	Monitored bool   `json:"monitored"`
-	Tags      []int  `json:"tags,omitempty"`
-	Path      string `json:"path,omitempty"`
+	TMDBID    int         `json:"tmdbId"`
+	IMDBID    string      `json:"imdbId,omitempty"`
+	Title     string      `json:"title"`
+	Year      int         `json:"year,omitempty"`
+	Overview  string      `json:"overview,omitempty"`
+	Monitored bool        `json:"monitored"`
+	Tags      []int       `json:"tags,omitempty"`
+	Path      string      `json:"path,omitempty"`
+	Seasons   []SeasonRef `json:"seasons,omitempty"`
+}
+
+// SeasonRef is one Sonarr season row.
+type SeasonRef struct {
+	SeasonNumber int               `json:"seasonNumber"`
+	Monitored    bool              `json:"monitored"`
+	Statistics   *SeasonStatistics `json:"statistics,omitempty"`
+}
+
+// SeasonStatistics carries episode counts from Sonarr.
+type SeasonStatistics struct {
+	EpisodeCount     int `json:"episodeCount,omitempty"`
+	EpisodeFileCount int `json:"episodeFileCount,omitempty"`
 }
 
 // ImportList is a configured *arr Import List (metadata only).
@@ -124,7 +151,7 @@ func (r *Radarr) ExportMovies(ctx context.Context, filter LibraryFilter) ([]Movi
 	}
 	out := make([]MovieRef, 0, len(rows))
 	for _, row := range rows {
-		if row.TMDBID == 0 {
+		if row.TMDBID == 0 && strings.TrimSpace(row.IMDBID) == "" {
 			continue
 		}
 		if matchMovie(row, filter) {
@@ -241,7 +268,7 @@ func (s *Sonarr) ExportSeries(ctx context.Context, filter LibraryFilter) ([]Seri
 	}
 	out := make([]SeriesRef, 0, len(rows))
 	for _, row := range rows {
-		if row.TMDBID == 0 {
+		if row.TMDBID == 0 && strings.TrimSpace(row.IMDBID) == "" {
 			continue
 		}
 		if matchSeries(row, filter) {

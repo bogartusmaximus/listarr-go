@@ -14,10 +14,12 @@ import (
 
 // polarsStore keeps runs in memory and mirrors them to CSV for Polars tests.
 // Operator settings live in settings.json alongside the CSV dump.
+// Catalog titles (listarr-go SoT cache) live in catalog_titles.csv.
 type polarsStore struct {
 	dir      string
 	mu       sync.Mutex
 	runs     []SyncRun
+	catalog  []CatalogTitle
 	settings *Settings
 }
 
@@ -28,8 +30,11 @@ func openPolars(dir string) (Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("polars dir: %w", err)
 	}
-	s := &polarsStore{dir: dir, runs: make([]SyncRun, 0, 64)}
+	s := &polarsStore{dir: dir, runs: make([]SyncRun, 0, 64), catalog: make([]CatalogTitle, 0, 64)}
 	if err := s.loadCSV(); err != nil {
+		return nil, err
+	}
+	if err := s.loadCatalog(); err != nil {
 		return nil, err
 	}
 	if err := s.loadSettings(); err != nil {

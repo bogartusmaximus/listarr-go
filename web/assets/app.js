@@ -63,8 +63,9 @@
 
   function fillInstanceSelects() {
     const names = state.instances.map((i) => i.name);
-    for (const id of ["syncSourceInstance", "syncTargetInstance"]) {
+    for (const id of ["syncSourceInstance", "syncTargetInstance", "libIngestInstance"]) {
       const el = $(id);
+      if (!el) continue;
       const prev = el.value;
       el.innerHTML = "";
       if (!names.length) {
@@ -427,8 +428,12 @@
   function toggleSourceFields() {
     const src = $("syncSource").value;
     const isArr = src === "arr-library";
+    const isCatalog = src === "listarr-go";
     $("wrapSourceInstance").hidden = !isArr;
-    $("wrapTmdbIds").hidden = isArr;
+    $("wrapTmdbIds").hidden = isArr || isCatalog;
+    $("wrapCatalogWatched").hidden = !isCatalog;
+    $("wrapCatalogUnwatched").hidden = !isCatalog;
+    $("syncMonitored").closest("label").hidden = isCatalog;
   }
 
   function buildSyncPayload() {
@@ -454,6 +459,11 @@
         monitoredOnly: $("syncMonitored").checked,
         tagIds: parseIntList($("syncTagIds").value),
         pathContains: $("syncPath").value.trim(),
+      };
+    } else if (source === "listarr-go") {
+      payload.catalogFilter = {
+        watchedOnly: $("syncCatalogWatchedOnly").checked,
+        unwatchedOnly: $("syncCatalogUnwatchedOnly").checked,
       };
     } else {
       payload.tmdbIds = parseIntList($("syncTmdbIds").value);
@@ -679,6 +689,54 @@
     toast("Plex unlinked");
   }
 
+  async function loadLibrary() {
+    const media = $("libMedia").value;
+    const watched = $("libWatched").value;
+    const q = encodeURIComponent($("libQuery").value.trim());
+    let path = `/api/v1/catalog/titles?limit=200&offset=0`;
+    if (media) path += `&mediaType=${encodeURIComponent(media)}`;
+    if (watched !== "all") path += `&watched=${encodeURIComponent(watched)}`;
+    if (q) path += `&q=${q}`;
+    const body = await api(path);
+    const wrap = $("libraryWrap");
+    const tbody = $("libraryResults").querySelector("tbody");
+    tbody.innerHTML = "";
+    wrap.hidden = false;
+    $("libMeta").textContent = `${body.total ?? 0} titles · backend ${body.backend || "—"}`;
+    for (const title of body.titles || []) {
+      const tr = document.createElement("tr");
+      const seasons = Array.isArray(title.seasons) ? title.seasons.length : 0;
+      const sources = (title.sourceInstances || []).join(", ");
+      const collection = title.collectionName || (title.collectionTmdbId ? String(title.collectionTmdbId) : "");
+      tr.innerHTML = `<td>${escapeHtml(title.title || "")}</td><td>${escapeHtml(title.mediaType || "")}</td><td>${title.year || ""}</td><td>${title.tmdbId || ""}</td><td>${escapeHtml(title.imdbId || "")}</td><td>${escapeHtml(collection)}</td><td>${seasons || ""}</td><td>${title.watched ? "yes" : "no"}</td><td>${escapeHtml(sources)}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function ingestLibrary() {
+    const payload = {
+      sourceInstance: $("libIngestInstance").value,
+      mediaType: $("libIngestMedia").value,
+      maxItems: 2000,
+      sourceFilter: { monitoredOnly: false },
+    };
+    const res = await api("/api/v1/catalog/ingest", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    toast(`Ingested ${res.fetched ?? 0} · added ${res.upsert?.added ?? 0} · updated ${res.upsert?.updated ?? 0}`);
+    await loadLibrary();
+  }
+
+  async function refreshPlexWatched() {
+    const media = $("libMedia").value;
+    let path = "/api/v1/catalog/plex-watched";
+    if (media) path += `?mediaType=${encodeURIComponent(media)}`;
+    const res = await api(path, { method: "POST", body: "{}" });
+    toast(`Plex watched · fetched ${res.fetched ?? 0} · updated ${res.updated ?? 0}`);
+    await loadLibrary();
+  }
+
   function switchTab(name) {
     for (const btn of document.querySelectorAll(".tab")) {
       const on = btn.dataset.tab === name;
@@ -698,6 +756,9 @@
     }
     if (name === "sync" && apiKey()) {
       refreshTargetOptions().catch(() => {});
+    }
+    if (name === "library" && apiKey()) {
+      loadLibrary().catch((err) => toast(err.message));
     }
   }
 
@@ -732,6 +793,16 @@
     });
     $("btnRefreshActivity").addEventListener("click", () => {
       loadActivity().catch((err) => toast(err.message));
+    });
+    $("libraryForm").addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      loadLibrary().catch((err) => toast(err.message));
+    });
+    $("btnLibIngest").addEventListener("click", () => {
+      ingestLibrary().catch((err) => toast(err.message));
+    });
+    $("btnLibPlexWatched").addEventListener("click", () => {
+      refreshPlexWatched().catch((err) => toast(err.message));
     });
     $("btnAddArr").addEventListener("click", () => {
       $("arrInstances").appendChild(arrRow());

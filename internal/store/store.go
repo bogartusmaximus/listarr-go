@@ -49,13 +49,14 @@ type Store interface {
 	ListSyncRuns(ctx context.Context, limit int) ([]SyncRun, error)
 	GetSettings(ctx context.Context) (Settings, bool, error)
 	PutSettings(ctx context.Context, settings Settings) error
+	CatalogStore
 }
 
 // Config selects and configures a backend. No private host defaults.
 type Config struct {
 	Backend     Backend
 	DatabaseURL string // postgres (and future mysql/sqlite DSNs)
-	PolarsDir   string // directory for polars CSV dumps
+	PolarsDir   string // directory for polars CSV dumps / postgres catalog cache
 }
 
 // Open constructs a Store. sqlite/mysql return explicit stub errors.
@@ -64,7 +65,7 @@ func Open(cfg Config) (Store, error) {
 	case "", BackendPolars:
 		return openPolars(cfg.PolarsDir)
 	case BackendPostgres:
-		return openPostgres(cfg.DatabaseURL)
+		return openPostgres(cfg.DatabaseURL, cfg.PolarsDir)
 	case BackendSQLite:
 		return nil, fmt.Errorf("sqlite backend is stubbed; use postgres or polars (planned for community builds)")
 	case BackendMySQL:
