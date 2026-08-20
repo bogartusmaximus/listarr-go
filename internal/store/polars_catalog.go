@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -206,22 +207,13 @@ func (s *polarsStore) ListCatalogTitles(_ context.Context, filter CatalogFilter)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	matched := make([]CatalogTitle, 0, len(s.catalog))
-	q := strings.ToLower(strings.TrimSpace(filter.Query))
 	for _, row := range s.catalog {
-		if filter.MediaType != "" && row.MediaType != filter.MediaType {
+		if !matchCatalogTitle(row, filter) {
 			continue
-		}
-		if filter.Watched != nil && row.Watched != *filter.Watched {
-			continue
-		}
-		if q != "" {
-			hay := strings.ToLower(row.Title + " " + row.IMDBID + " " + strconv.Itoa(row.TMDBID))
-			if !strings.Contains(hay, q) {
-				continue
-			}
 		}
 		matched = append(matched, cloneCatalogTitle(row))
 	}
+	sortCatalogTitles(matched, filter.Sort)
 	total := len(matched)
 	limit := ClampCatalogLimit(filter.Limit)
 	offset := filter.Offset
@@ -236,6 +228,77 @@ func (s *polarsStore) ListCatalogTitles(_ context.Context, filter CatalogFilter)
 		end = total
 	}
 	return matched[offset:end], total, nil
+}
+
+func matchCatalogTitle(row CatalogTitle, filter CatalogFilter) bool {
+	if filter.MediaType != "" && row.MediaType != filter.MediaType {
+		return false
+	}
+	if filter.Watched != nil && row.Watched != *filter.Watched {
+		return false
+	}
+	if filter.Monitored != nil && row.Monitored != *filter.Monitored {
+		return false
+	}
+	if filter.SourceInstance != "" {
+		want := strings.ToLower(strings.TrimSpace(filter.SourceInstance))
+		found := false
+		for _, src := range row.SourceInstances {
+			if strings.ToLower(src) == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	if filter.Collection != "" && !strings.Contains(strings.ToLower(row.CollectionName), strings.ToLower(filter.Collection)) {
+		return false
+	}
+	if filter.YearMin != nil && (row.Year == 0 || row.Year < *filter.YearMin) {
+		return false
+	}
+	if filter.YearMax != nil && (row.Year == 0 || row.Year > *filter.YearMax) {
+		return false
+	}
+	if q := strings.ToLower(strings.TrimSpace(filter.Query)); q != "" {
+		hay := strings.ToLower(row.Title + " " + row.IMDBID + " " + strconv.Itoa(row.TMDBID))
+		if !strings.Contains(hay, q) {
+			return false
+		}
+	}
+	return true
+}
+
+func sortCatalogTitles(rows []CatalogTitle, mode string) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "year":
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Year == rows[j].Year {
+				return rows[i].Title < rows[j].Title
+			}
+			return rows[i].Year > rows[j].Year
+		})
+	case "updated":
+		sort.Slice(rows, func(i, j int) bool {
+			return rows[i].UpdatedAt.After(rows[j].UpdatedAt)
+		})
+	case "watched":
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Watched == rows[j].Watched {
+				return rows[i].Title < rows[j].Title
+			}
+			return rows[i].Watched && !rows[j].Watched
+		})
+	default:
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Title == rows[j].Title {
+				return rows[i].ID < rows[j].ID
+			}
+			return rows[i].Title < rows[j].Title
+		})
+	}
 }
 
 func (s *polarsStore) GetCatalogTitle(_ context.Context, id string) (CatalogTitle, bool, error) {
@@ -268,6 +331,35 @@ func (s *polarsStore) ApplyCatalogWatched(_ context.Context, patches []CatalogWa
 		}
 		row.UpdatedAt = time.Now().UTC()
 		s.catalog[idx] = row
+		updated++
+	}
+	if err := s.flushCatalogLocked(); err != nil {
+		return updated, err
+	}
+	return updated, nil
+}
+
+func (s *polarsStore) BulkUpdateCatalogTitles(_ context.Context, patch CatalogBulkUpdate) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if patch.Monitored == nil || len(patch.IDs) == 0 {
+		return 0, nil
+	}
+	want := map[string]struct{}{}
+	for _, id := range patch.IDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			want[id] = struct{}{}
+		}
+	}
+	updated := 0
+	now := time.Now().UTC()
+	for i := range s.catalog {
+		if _, ok := want[s.catalog[i].ID]; !ok {
+			continue
+		}
+		s.catalog[i].Monitored = *patch.Monitored
+		s.catalog[i].UpdatedAt = now
 		updated++
 	}
 	if err := s.flushCatalogLocked(); err != nil {

@@ -16,11 +16,13 @@ import (
 // Operator settings live in settings.json alongside the CSV dump.
 // Catalog titles (listarr-go SoT cache) live in catalog_titles.csv.
 type polarsStore struct {
-	dir      string
-	mu       sync.Mutex
-	runs     []SyncRun
-	catalog  []CatalogTitle
-	settings *Settings
+	dir       string
+	mu        sync.Mutex
+	runs      []SyncRun
+	catalog   []CatalogTitle
+	jobs      []Job
+	schedules []Schedule
+	settings  *Settings
 }
 
 func openPolars(dir string) (Store, error) {
@@ -30,11 +32,23 @@ func openPolars(dir string) (Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("polars dir: %w", err)
 	}
-	s := &polarsStore{dir: dir, runs: make([]SyncRun, 0, 64), catalog: make([]CatalogTitle, 0, 64)}
+	s := &polarsStore{
+		dir:       dir,
+		runs:      make([]SyncRun, 0, 64),
+		catalog:   make([]CatalogTitle, 0, 64),
+		jobs:      make([]Job, 0, 32),
+		schedules: make([]Schedule, 0, 8),
+	}
 	if err := s.loadCSV(); err != nil {
 		return nil, err
 	}
 	if err := s.loadCatalog(); err != nil {
+		return nil, err
+	}
+	if err := s.loadJobs(); err != nil {
+		return nil, err
+	}
+	if err := s.loadSchedules(); err != nil {
 		return nil, err
 	}
 	if err := s.loadSettings(); err != nil {
@@ -104,10 +118,16 @@ func cloneSettings(in Settings) Settings {
 	out := in
 	if in.ArrInstances == nil {
 		out.ArrInstances = []ArrInstanceSettings{}
-		return out
+	} else {
+		out.ArrInstances = make([]ArrInstanceSettings, len(in.ArrInstances))
+		copy(out.ArrInstances, in.ArrInstances)
 	}
-	out.ArrInstances = make([]ArrInstanceSettings, len(in.ArrInstances))
-	copy(out.ArrInstances, in.ArrInstances)
+	if in.SyncRoutes == nil {
+		out.SyncRoutes = []SyncRoute{}
+	} else {
+		out.SyncRoutes = make([]SyncRoute, len(in.SyncRoutes))
+		copy(out.SyncRoutes, in.SyncRoutes)
+	}
 	return out
 }
 

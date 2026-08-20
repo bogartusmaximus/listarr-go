@@ -4,7 +4,7 @@ info:
   description: |
     Public listarr-go API. Inspired by fisherd80/Listarr (MIT).
     Safe defaults: loopback listen, apply opt-in, no private host defaults.
-  version: 0.6.2
+  version: 0.7.0
 servers:
   - url: http://127.0.0.1:8787
     description: Local loopback (default)
@@ -323,6 +323,103 @@ paths:
       responses:
         "200":
           description: Discover results
+  /api/v1/jobs:
+    get:
+      operationId: listJobs
+      summary: Recent async jobs
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Job list
+    post:
+      operationId: enqueueJob
+      summary: Enqueue sync, catalog-ingest, or plex-watched job
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "202":
+          description: Job queued
+        "403":
+          description: Apply not allowed (Safe Mode / route)
+  /api/v1/jobs/{id}:
+    get:
+      operationId: getJob
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Job
+        "404":
+          description: Not found
+  /api/v1/schedules:
+    get:
+      operationId: listSchedules
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Schedules
+    post:
+      operationId: createSchedule
+      summary: Create schedule (allowApply is per-schedule Safe Mode)
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Saved schedule
+  /api/v1/schedules/{id}:
+    put:
+      operationId: updateSchedule
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Saved schedule
+    delete:
+      operationId: deleteSchedule
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Deleted
+  /api/v1/schedules/{id}/run:
+    post:
+      operationId: runScheduleNow
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "202":
+          description: Job enqueued
+  /api/v1/catalog/bulk:
+    post:
+      operationId: catalogBulkUpdate
+      summary: Bulk update catalog titles (e.g. monitored)
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Updated count
   /api/v1/sync/preview:
     post:
       operationId: syncPreview
@@ -366,8 +463,8 @@ components:
       properties:
         apiKey: { type: string }
         instanceName: { type: string }
-        applyEnabled: { type: boolean, description: "Inverse of safeMode (writes allowed)" }
-        safeMode: { type: boolean, description: "Read-only when true (default)" }
+        applyEnabled: { type: boolean, description: "Inverse of safeMode (manual Sync UI)" }
+        safeMode: { type: boolean, description: "Default for manual Sync UI only; schedules/routes use allowApply" }
         torboxSearchPerHour: { type: integer, minimum: 1 }
         tmdbApiKey: { type: string }
         plex:
@@ -376,7 +473,23 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ArrInstanceSettings"
+        syncRoutes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SyncRoute"
         updatedAt: { type: string, format: date-time }
+    SyncRoute:
+      type: object
+      required: [source, mediaType, targetInstance]
+      properties:
+        name: { type: string }
+        source: { type: string, enum: [tmdb, arr-library, listarr-go] }
+        mediaType: { type: string, enum: [movie, tv] }
+        sourceInstance: { type: string }
+        targetInstance: { type: string }
+        rootFolderPath: { type: string }
+        qualityProfileId: { type: integer }
+        allowApply: { type: boolean }
     PlexSettings:
       type: object
       properties:

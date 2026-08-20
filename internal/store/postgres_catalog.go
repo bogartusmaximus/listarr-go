@@ -223,7 +223,7 @@ func (s *postgresStore) countCatalog(ctx context.Context) (int, error) {
 
 func (s *postgresStore) ListCatalogTitles(ctx context.Context, filter CatalogFilter) ([]CatalogTitle, int, error) {
 	where := []string{"1=1"}
-	args := make([]any, 0, 6)
+	args := make([]any, 0, 10)
 	argN := 1
 	if filter.MediaType != "" {
 		where = append(where, fmt.Sprintf("media_type = $%d", argN))
@@ -233,6 +233,31 @@ func (s *postgresStore) ListCatalogTitles(ctx context.Context, filter CatalogFil
 	if filter.Watched != nil {
 		where = append(where, fmt.Sprintf("watched = $%d", argN))
 		args = append(args, *filter.Watched)
+		argN++
+	}
+	if filter.Monitored != nil {
+		where = append(where, fmt.Sprintf("monitored = $%d", argN))
+		args = append(args, *filter.Monitored)
+		argN++
+	}
+	if src := strings.TrimSpace(filter.SourceInstance); src != "" {
+		where = append(where, fmt.Sprintf("source_instances @> to_jsonb(ARRAY[$%d]::text[])", argN))
+		args = append(args, src)
+		argN++
+	}
+	if col := strings.TrimSpace(filter.Collection); col != "" {
+		where = append(where, fmt.Sprintf("collection_name ILIKE $%d", argN))
+		args = append(args, "%"+col+"%")
+		argN++
+	}
+	if filter.YearMin != nil {
+		where = append(where, fmt.Sprintf("year >= $%d AND year > 0", argN))
+		args = append(args, *filter.YearMin)
+		argN++
+	}
+	if filter.YearMax != nil {
+		where = append(where, fmt.Sprintf("year <= $%d AND year > 0", argN))
+		args = append(args, *filter.YearMax)
 		argN++
 	}
 	if q := strings.TrimSpace(filter.Query); q != "" {
@@ -251,6 +276,15 @@ func (s *postgresStore) ListCatalogTitles(ctx context.Context, filter CatalogFil
 	if offset < 0 {
 		offset = 0
 	}
+	order := "title ASC, id ASC"
+	switch strings.ToLower(strings.TrimSpace(filter.Sort)) {
+	case "year":
+		order = "year DESC, title ASC"
+	case "updated":
+		order = "updated_at DESC, id ASC"
+	case "watched":
+		order = "watched DESC, title ASC"
+	}
 	listArgs := append(append([]any{}, args...), limit, offset)
 	listQ := fmt.Sprintf(`
 SELECT id, media_type, tmdb_id, imdb_id, title, year, overview, path, monitored,
@@ -258,8 +292,8 @@ SELECT id, media_type, tmdb_id, imdb_id, title, year, overview, path, monitored,
        plex_rating_key, source_instances, updated_at
 FROM listarr_catalog_titles
 WHERE %s
-ORDER BY title ASC, id ASC
-LIMIT $%d OFFSET $%d`, whereSQL, argN, argN+1)
+ORDER BY %s
+LIMIT $%d OFFSET $%d`, whereSQL, order, argN, argN+1)
 	rows, err := s.db.QueryContext(ctx, listQ, listArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("postgres catalog list: %w", err)
@@ -308,6 +342,36 @@ func (s *postgresStore) ApplyCatalogWatched(ctx context.Context, patches []Catal
 	}
 	_ = s.mirrorCatalogCSV(ctx)
 	return updated, nil
+}
+
+func (s *postgresStore) BulkUpdateCatalogTitles(ctx context.Context, patch CatalogBulkUpdate) (int, error) {
+	if patch.Monitored == nil || len(patch.IDs) == 0 {
+		return 0, nil
+	}
+	ids := make([]string, 0, len(patch.IDs))
+	for _, id := range patch.IDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	const maxIDs = 2000
+	if len(ids) > maxIDs {
+		ids = ids[:maxIDs]
+	}
+	res, err := s.db.ExecContext(ctx, `
+UPDATE listarr_catalog_titles
+SET monitored = $1, updated_at = NOW()
+WHERE id = ANY($2::text[])`, *patch.Monitored, ids)
+	if err != nil {
+		return 0, fmt.Errorf("postgres bulk catalog update: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	_ = s.mirrorCatalogCSV(ctx)
+	return int(n), nil
 }
 
 func (s *postgresStore) allCatalogTitles(ctx context.Context) ([]CatalogTitle, error) {

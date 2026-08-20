@@ -2,11 +2,15 @@ package appstate
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/bogartusmaximus/listarr-go/internal/arr"
+	"github.com/bogartusmaximus/listarr-go/internal/catalog"
 	"github.com/bogartusmaximus/listarr-go/internal/httpx"
+	"github.com/bogartusmaximus/listarr-go/internal/jobs"
+	"github.com/bogartusmaximus/listarr-go/internal/plex"
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
 	"github.com/bogartusmaximus/listarr-go/internal/store"
 	"github.com/bogartusmaximus/listarr-go/internal/syncjob"
@@ -60,6 +64,32 @@ func (rt *Runtime) View() Snapshot {
 	}
 }
 
+// JobRuntime implements jobs.Viewer for the async worker.
+func (rt *Runtime) JobRuntime() jobs.RuntimeView {
+	view := rt.View()
+	return jobs.RuntimeView{
+		Sync:     view.Runner,
+		Catalog:  CatalogService(view, rt.HTTPClient),
+		Settings: view.Settings,
+	}
+}
+
+// CatalogService builds ingest/watched helpers from a snapshot.
+func CatalogService(view Snapshot, httpClient *httpx.Client) *catalog.Service {
+	if view.Store == nil {
+		return nil
+	}
+	svc := &catalog.Service{Store: view.Store, Arr: view.Arr}
+	plexCfg := view.Settings.Plex
+	if strings.TrimSpace(plexCfg.ServerURL) != "" && strings.TrimSpace(plexCfg.Token) != "" {
+		client, err := plex.New(plexCfg.ServerURL, plexCfg.Token, plexCfg.ClientIdentifier, httpClient)
+		if err == nil {
+			svc.Plex = client
+		}
+	}
+	return svc
+}
+
 // Apply rebuilds live clients from settings (hot-reload).
 func (rt *Runtime) Apply(set store.Settings) error {
 	set = Normalize(set)
@@ -103,9 +133,15 @@ func cloneSettings(in store.Settings) store.Settings {
 	out := in
 	if in.ArrInstances == nil {
 		out.ArrInstances = []store.ArrInstanceSettings{}
-		return out
+	} else {
+		out.ArrInstances = make([]store.ArrInstanceSettings, len(in.ArrInstances))
+		copy(out.ArrInstances, in.ArrInstances)
 	}
-	out.ArrInstances = make([]store.ArrInstanceSettings, len(in.ArrInstances))
-	copy(out.ArrInstances, in.ArrInstances)
+	if in.SyncRoutes == nil {
+		out.SyncRoutes = []store.SyncRoute{}
+	} else {
+		out.SyncRoutes = make([]store.SyncRoute, len(in.SyncRoutes))
+		copy(out.SyncRoutes, in.SyncRoutes)
+	}
 	return out
 }

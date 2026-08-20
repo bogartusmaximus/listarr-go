@@ -78,7 +78,10 @@ CREATE TABLE IF NOT EXISTS listarr_settings (
 	if _, err := s.db.ExecContext(ctx, settings); err != nil {
 		return fmt.Errorf("postgres migrate settings: %w", err)
 	}
-	return s.migrateCatalog(ctx)
+	if err := s.migrateCatalog(ctx); err != nil {
+		return err
+	}
+	return s.migrateJobs(ctx)
 }
 
 func (s *postgresStore) GetSettings(ctx context.Context) (Settings, bool, error) {

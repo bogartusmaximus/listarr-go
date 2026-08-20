@@ -126,12 +126,12 @@
     state.safeMode = Boolean(on);
     $("btnApply").disabled = state.safeMode || !state.lastSyncPayload || state.syncBusy;
     if (state.syncBusy) {
-      $("applyHint").textContent = "Sync in progress…";
+      $("applyHint").textContent = "Sync job in progress…";
       return;
     }
     $("applyHint").textContent = state.safeMode
-      ? "Apply stays locked while Safe Mode is on."
-      : "Safe Mode is off — Apply will write to the target *arr. Preview first.";
+      ? "Safe Mode locks manual Apply here. Schedules / SyncRoutes can still allow apply on their own."
+      : "Safe Mode is off — Apply will enqueue a write job. Preview first.";
   }
 
   function arrRow(inst = {}) {
@@ -273,6 +273,33 @@
     $("plexStatus").textContent = linked ? `Linked${who}` : "Not linked";
   }
 
+  function routeRow(route = {}) {
+    const row = document.createElement("div");
+    row.className = "arr-row route-row";
+    row.innerHTML = `
+      <label class="field"><span>Name</span><input type="text" class="route-name" value="${escapeHtml(route.name || "")}" placeholder="movies-out" /></label>
+      <label class="field"><span>Source</span>
+        <select class="route-source">
+          <option value="listarr-go"${route.source === "listarr-go" ? " selected" : ""}>listarr-go</option>
+          <option value="arr-library"${route.source === "arr-library" ? " selected" : ""}>arr-library</option>
+          <option value="tmdb"${route.source === "tmdb" ? " selected" : ""}>tmdb</option>
+        </select>
+      </label>
+      <label class="field"><span>Media</span>
+        <select class="route-media">
+          <option value="movie"${route.mediaType !== "tv" ? " selected" : ""}>movie</option>
+          <option value="tv"${route.mediaType === "tv" ? " selected" : ""}>tv</option>
+        </select>
+      </label>
+      <label class="field"><span>Source instance</span><input type="text" class="route-src-inst" value="${escapeHtml(route.sourceInstance || "")}" placeholder="optional" /></label>
+      <label class="field"><span>Target instance</span><input type="text" class="route-tgt-inst" value="${escapeHtml(route.targetInstance || "")}" required /></label>
+      <label class="field check"><input type="checkbox" class="route-allow"${route.allowApply ? " checked" : ""} /><span>Allow apply</span></label>
+      <button type="button" class="btn danger route-remove">Remove</button>
+    `;
+    row.querySelector(".route-remove").addEventListener("click", () => row.remove());
+    return row;
+  }
+
   function renderSettings(set) {
     $("setInstanceName").value = set.instanceName || "";
     $("setApiKey").value = set.apiKey || "";
@@ -300,6 +327,11 @@
     } else {
       for (const inst of list) wrap.appendChild(arrRow(inst));
     }
+    const routesWrap = $("syncRoutes");
+    routesWrap.innerHTML = "";
+    for (const route of set.syncRoutes || []) {
+      routesWrap.appendChild(routeRow(route));
+    }
   }
 
   function collectSettings() {
@@ -318,6 +350,21 @@
       }
       arrInstances.push({ name, kind, url, apiKey, authCookie });
     }
+    const syncRoutes = [];
+    for (const row of $("syncRoutes").querySelectorAll(".route-row")) {
+      const name = row.querySelector(".route-name").value.trim();
+      const source = row.querySelector(".route-source").value;
+      const mediaType = row.querySelector(".route-media").value;
+      const sourceInstance = row.querySelector(".route-src-inst").value.trim();
+      const targetInstance = row.querySelector(".route-tgt-inst").value.trim();
+      const allowApply = row.querySelector(".route-allow").checked;
+      if (!name && !targetInstance && !sourceInstance) continue;
+      if (!targetInstance) {
+        incomplete = true;
+        continue;
+      }
+      syncRoutes.push({ name, source, mediaType, sourceInstance, targetInstance, allowApply });
+    }
     return {
       incomplete,
       apiKey: $("setApiKey").value.trim(),
@@ -330,6 +377,7 @@
         token: $("setPlexToken").value.trim(),
       },
       arrInstances,
+      syncRoutes,
     };
   }
 
@@ -342,6 +390,7 @@
       tmdbApiKey: collected.tmdbApiKey,
       plex: collected.plex,
       arrInstances: collected.arrInstances,
+      syncRoutes: collected.syncRoutes,
     };
   }
 
@@ -507,18 +556,52 @@
     setSafeMode(state.safeMode);
   }
 
+  async function pollJob(jobId, onProgress) {
+    const deadline = Date.now() + 30 * 60 * 1000;
+    while (Date.now() < deadline) {
+      const job = await api(`/api/v1/jobs/${encodeURIComponent(jobId)}`);
+      if (onProgress) onProgress(job);
+      if (job.status === "succeeded") return job;
+      if (job.status === "failed" || job.status === "cancelled") {
+        throw new Error(job.error || `job ${job.status}`);
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    throw new Error("job timed out");
+  }
+
   async function runSync(apply) {
     const payload = buildSyncPayload();
     const count = payload.maxItems || 100;
     const label = apply
-      ? `Applying up to ${count} titles — lookup and add can take a few minutes…`
-      : `Building preview of up to ${count} titles…`;
+      ? `Applying up to ${count} titles (async job)…`
+      : `Previewing up to ${count} titles (async job)…`;
     setSyncBusy(true, label);
     $("syncMeta").hidden = false;
-    $("syncMeta").textContent = apply ? "Apply in progress…" : "Preview in progress…";
+    $("syncMeta").textContent = apply ? "Apply job queued…" : "Preview job queued…";
     try {
-      const path = apply ? "/api/v1/sync/apply" : "/api/v1/sync/preview";
-      const res = await api(path, { method: "POST", body: JSON.stringify(payload) });
+      const enqueued = await api("/api/v1/jobs", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "sync",
+          dryRun: !apply,
+          payload,
+        }),
+      });
+      const job = await pollJob(enqueued.id, (j) => {
+        const msg = (j.progress && j.progress.message) || j.status;
+        $("syncMeta").textContent = `Job ${j.id}: ${msg}`;
+        $("syncBusyText").textContent = `Job ${j.status}…`;
+      });
+      let res = null;
+      if (job.result) {
+        try {
+          res = typeof job.result === "string" ? JSON.parse(job.result) : job.result;
+        } catch {
+          res = null;
+        }
+      }
+      if (!res) throw new Error("job finished without a sync result");
       state.lastSyncPayload = payload;
       renderSyncResult(res);
       toast(apply ? "Apply finished" : "Preview ready");
@@ -759,10 +842,21 @@
     if (resetOffset) state.libOffset = 0;
     const media = $("libMedia").value;
     const watched = $("libWatched").value;
+    const monitored = $("libMonitored").value;
+    const source = $("libSource").value.trim();
+    const collection = $("libCollection").value.trim();
+    const yearMin = $("libYearMin").value.trim();
+    const yearMax = $("libYearMax").value.trim();
+    const sort = $("libSort").value;
     const q = encodeURIComponent($("libQuery").value.trim());
-    let path = `/api/v1/catalog/titles?limit=${libPageSize}&offset=${state.libOffset}`;
+    let path = `/api/v1/catalog/titles?limit=${libPageSize}&offset=${state.libOffset}&sort=${encodeURIComponent(sort)}`;
     if (media) path += `&mediaType=${encodeURIComponent(media)}`;
     if (watched !== "all") path += `&watched=${encodeURIComponent(watched)}`;
+    if (monitored !== "all") path += `&monitored=${encodeURIComponent(monitored)}`;
+    if (source) path += `&sourceInstance=${encodeURIComponent(source)}`;
+    if (collection) path += `&collection=${encodeURIComponent(collection)}`;
+    if (yearMin) path += `&yearMin=${encodeURIComponent(yearMin)}`;
+    if (yearMax) path += `&yearMax=${encodeURIComponent(yearMax)}`;
     if (q) path += `&q=${q}`;
     const body = await api(path);
     const wrap = $("libraryWrap");
@@ -779,14 +873,33 @@
     $("libPageLabel").textContent = `${start}–${end} of ${total}`;
     $("btnLibPrev").disabled = state.libOffset <= 0;
     $("btnLibNext").disabled = state.libOffset + libPageSize >= total;
+    $("libSelectAll").checked = false;
     for (const title of body.titles || []) {
       const tr = document.createElement("tr");
       const seasons = Array.isArray(title.seasons) ? title.seasons.length : 0;
       const sources = (title.sourceInstances || []).join(", ");
-      const collection = title.collectionName || (title.collectionTmdbId ? String(title.collectionTmdbId) : "");
-      tr.innerHTML = `<td>${escapeHtml(title.title || "")}</td><td>${escapeHtml(title.mediaType || "")}</td><td>${title.year || ""}</td><td>${title.tmdbId || ""}</td><td>${escapeHtml(title.imdbId || "")}</td><td>${escapeHtml(collection)}</td><td>${seasons || ""}</td><td>${title.watched ? "yes" : "no"}</td><td>${escapeHtml(sources)}</td>`;
+      const collectionName = title.collectionName || (title.collectionTmdbId ? String(title.collectionTmdbId) : "");
+      tr.innerHTML = `<td><input type="checkbox" class="lib-row-check" value="${escapeHtml(title.id || "")}" /></td><td>${escapeHtml(title.title || "")}</td><td>${escapeHtml(title.mediaType || "")}</td><td>${title.year || ""}</td><td>${title.tmdbId || ""}</td><td>${escapeHtml(title.imdbId || "")}</td><td>${escapeHtml(collectionName)}</td><td>${title.monitored ? "yes" : "no"}</td><td>${seasons || ""}</td><td>${title.watched ? "yes" : "no"}</td><td>${escapeHtml(sources)}</td>`;
       tbody.appendChild(tr);
     }
+  }
+
+  function selectedLibraryIds() {
+    return Array.from(document.querySelectorAll(".lib-row-check:checked")).map((el) => el.value).filter(Boolean);
+  }
+
+  async function bulkMonitored(on) {
+    const ids = selectedLibraryIds();
+    if (!ids.length) {
+      toast("Select one or more titles on this page");
+      return;
+    }
+    const res = await api("/api/v1/catalog/bulk", {
+      method: "POST",
+      body: JSON.stringify({ ids, monitored: on }),
+    });
+    toast(`Updated monitored=${on} on ${res.updated ?? 0} titles`);
+    await loadLibrary();
   }
 
   async function ingestLibrary() {
@@ -796,12 +909,22 @@
       sourceFilter: { monitoredOnly: false },
     };
     $("btnLibIngest").disabled = true;
-    $("libMeta").textContent = "Ingesting full *arr library…";
+    $("libMeta").textContent = "Queueing ingest job…";
     try {
-      const res = await api("/api/v1/catalog/ingest", {
+      const enqueued = await api("/api/v1/jobs", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ kind: "catalog-ingest", dryRun: false, allowApply: true, payload }),
       });
+      $("libMeta").textContent = `Ingest job ${enqueued.id} running…`;
+      const job = await pollJob(enqueued.id);
+      let res = job.result;
+      if (typeof res === "string") {
+        try {
+          res = JSON.parse(res);
+        } catch {
+          res = {};
+        }
+      }
       const avail = res.available ?? res.fetched ?? 0;
       const extra = res.truncated ? ` (truncated at ${res.fetched})` : "";
       toast(`Ingested ${res.fetched ?? 0} of ${avail}${extra} · added ${res.upsert?.added ?? 0} · updated ${res.upsert?.updated ?? 0}`);
@@ -813,11 +936,104 @@
 
   async function refreshPlexWatched() {
     const media = $("libMedia").value;
-    let path = "/api/v1/catalog/plex-watched";
-    if (media) path += `?mediaType=${encodeURIComponent(media)}`;
-    const res = await api(path, { method: "POST", body: "{}" });
+    const payload = { mediaType: media || "" };
+    const enqueued = await api("/api/v1/jobs", {
+      method: "POST",
+      body: JSON.stringify({ kind: "plex-watched", dryRun: false, allowApply: true, payload }),
+    });
+    $("libMeta").textContent = `Plex watched job ${enqueued.id}…`;
+    const job = await pollJob(enqueued.id);
+    let res = job.result;
+    if (typeof res === "string") {
+      try {
+        res = JSON.parse(res);
+      } catch {
+        res = {};
+      }
+    }
     toast(`Plex watched · fetched ${res.fetched ?? 0} · updated ${res.updated ?? 0}`);
     await loadLibrary();
+  }
+
+  async function loadSchedules() {
+    const body = await api("/api/v1/schedules");
+    const wrap = $("schedulesWrap");
+    const tbody = $("schedulesResults").querySelector("tbody");
+    tbody.innerHTML = "";
+    wrap.hidden = false;
+    for (const sched of body.schedules || []) {
+      const tr = document.createElement("tr");
+      const next = sched.nextRunAt ? new Date(sched.nextRunAt).toLocaleString() : "—";
+      const last = sched.lastStatus || "—";
+      tr.innerHTML = `<td>${escapeHtml(sched.name || "")}</td><td>${escapeHtml(sched.kind || "")}</td><td>${sched.intervalMinutes ?? ""}m</td><td>${sched.allowApply ? "yes" : "no"}</td><td>${escapeHtml(last)}</td><td>${escapeHtml(next)}</td><td><button type="button" class="btn sched-run" data-id="${escapeHtml(sched.id)}">Run</button> <button type="button" class="btn danger sched-del" data-id="${escapeHtml(sched.id)}">Delete</button></td>`;
+      tbody.appendChild(tr);
+    }
+    for (const btn of tbody.querySelectorAll(".sched-run")) {
+      btn.addEventListener("click", () => {
+        runScheduleNow(btn.dataset.id).catch((err) => toast(err.message));
+      });
+    }
+    for (const btn of tbody.querySelectorAll(".sched-del")) {
+      btn.addEventListener("click", () => {
+        deleteSchedule(btn.dataset.id).catch((err) => toast(err.message));
+      });
+    }
+  }
+
+  async function loadJobs() {
+    const body = await api("/api/v1/jobs?limit=30");
+    const wrap = $("jobsWrap");
+    const tbody = $("jobsResults").querySelector("tbody");
+    tbody.innerHTML = "";
+    wrap.hidden = false;
+    for (const job of body.jobs || []) {
+      const tr = document.createElement("tr");
+      const when = job.createdAt ? new Date(job.createdAt).toLocaleString() : "";
+      const msg = (job.progress && job.progress.message) || job.error || "";
+      tr.innerHTML = `<td>${escapeHtml(when)}</td><td>${escapeHtml(job.kind || "")}</td><td>${escapeHtml(job.status || "")}</td><td>${job.dryRun ? "yes" : "no"}</td><td>${job.allowApply ? "yes" : "no"}</td><td>${escapeHtml(msg)}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function saveSchedule(ev) {
+    ev.preventDefault();
+    let payload = {};
+    const raw = $("schedPayload").value.trim();
+    if (raw) {
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        throw new Error("payload must be valid JSON");
+      }
+    }
+    await api("/api/v1/schedules", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("schedName").value.trim(),
+        kind: $("schedKind").value,
+        intervalMinutes: Number($("schedInterval").value) || 60,
+        enabled: $("schedEnabled").checked,
+        allowApply: $("schedAllowApply").checked,
+        payload,
+      }),
+    });
+    toast("Schedule saved");
+    await loadSchedules();
+    await loadJobs();
+  }
+
+  async function runScheduleNow(id) {
+    await api(`/api/v1/schedules/${encodeURIComponent(id)}/run`, { method: "POST", body: "{}" });
+    toast("Schedule enqueued");
+    await loadSchedules();
+    await loadJobs();
+  }
+
+  async function deleteSchedule(id) {
+    if (!window.confirm("Delete this schedule?")) return;
+    await api(`/api/v1/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
+    toast("Schedule deleted");
+    await loadSchedules();
   }
 
   function switchTab(name) {
@@ -842,6 +1058,10 @@
     }
     if (name === "library" && apiKey()) {
       loadLibrary().catch((err) => toast(err.message));
+    }
+    if (name === "schedules" && apiKey()) {
+      loadSchedules().catch((err) => toast(err.message));
+      loadJobs().catch((err) => toast(err.message));
     }
   }
 
@@ -900,8 +1120,29 @@
     $("btnLibPlexWatched").addEventListener("click", () => {
       refreshPlexWatched().catch((err) => toast(err.message));
     });
+    $("btnLibMonitoredOn").addEventListener("click", () => {
+      bulkMonitored(true).catch((err) => toast(err.message));
+    });
+    $("btnLibMonitoredOff").addEventListener("click", () => {
+      bulkMonitored(false).catch((err) => toast(err.message));
+    });
+    $("libSelectAll").addEventListener("change", (ev) => {
+      for (const box of document.querySelectorAll(".lib-row-check")) {
+        box.checked = ev.currentTarget.checked;
+      }
+    });
     $("btnAddArr").addEventListener("click", () => {
       $("arrInstances").appendChild(arrRow());
+    });
+    $("btnAddRoute").addEventListener("click", () => {
+      $("syncRoutes").appendChild(routeRow());
+    });
+    $("scheduleForm").addEventListener("submit", (ev) => {
+      saveSchedule(ev).catch((err) => toast(err.message));
+    });
+    $("btnRefreshSchedules").addEventListener("click", () => {
+      loadSchedules().catch((err) => toast(err.message));
+      loadJobs().catch((err) => toast(err.message));
     });
     $("settingsForm").addEventListener("input", scheduleAutosave);
     $("settingsForm").addEventListener("change", () => {

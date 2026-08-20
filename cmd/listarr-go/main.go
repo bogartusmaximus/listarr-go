@@ -5,13 +5,17 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/bogartusmaximus/listarr-go/internal/api"
 	"github.com/bogartusmaximus/listarr-go/internal/appstate"
 	"github.com/bogartusmaximus/listarr-go/internal/config"
 	"github.com/bogartusmaximus/listarr-go/internal/httpx"
+	"github.com/bogartusmaximus/listarr-go/internal/jobs"
 	"github.com/bogartusmaximus/listarr-go/internal/ratelimit"
+	"github.com/bogartusmaximus/listarr-go/internal/scheduler"
 	"github.com/bogartusmaximus/listarr-go/internal/store"
 )
 
@@ -56,6 +60,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	go (&jobs.Runner{Store: st, Viewer: rt}).Start(bgCtx)
+	go (&scheduler.Service{Store: st}).Start(bgCtx)
+
 	srv := api.New(rt)
 
 	httpSrv := &http.Server{
@@ -65,7 +74,7 @@ func main() {
 		ReadTimeout:       60 * time.Second,
 		// Apply of hundreds of titles is sequential lookup+add; keep this generous.
 		WriteTimeout: 15 * time.Minute,
-		IdleTimeout:       60 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	view := rt.View()
@@ -79,6 +88,17 @@ func main() {
 		"arrInstances", view.Arr.Len(),
 		"version", api.Version,
 	)
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		bgCancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
+	}()
+
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("listen failed", "err", err)
 		os.Exit(1)

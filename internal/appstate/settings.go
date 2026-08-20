@@ -145,6 +145,23 @@ func Normalize(set store.Settings) store.Settings {
 		})
 	}
 	set.ArrInstances = out
+	if set.SyncRoutes == nil {
+		set.SyncRoutes = []store.SyncRoute{}
+	}
+	routes := make([]store.SyncRoute, 0, len(set.SyncRoutes))
+	for _, route := range set.SyncRoutes {
+		routes = append(routes, store.SyncRoute{
+			Name:             strings.TrimSpace(route.Name),
+			Source:           strings.ToLower(strings.TrimSpace(route.Source)),
+			MediaType:        strings.ToLower(strings.TrimSpace(route.MediaType)),
+			SourceInstance:   strings.ToLower(strings.TrimSpace(route.SourceInstance)),
+			TargetInstance:   strings.ToLower(strings.TrimSpace(route.TargetInstance)),
+			RootFolderPath:   strings.TrimSpace(route.RootFolderPath),
+			QualityProfileID: route.QualityProfileID,
+			AllowApply:       route.AllowApply,
+		})
+	}
+	set.SyncRoutes = routes
 	return set
 }
 

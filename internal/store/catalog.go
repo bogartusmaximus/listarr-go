@@ -45,11 +45,23 @@ type CatalogTitle struct {
 
 // CatalogFilter selects titles for browse / sync export.
 type CatalogFilter struct {
-	MediaType string // movie|tv|"" (all)
-	Query     string
-	Watched   *bool
-	Limit     int
-	Offset    int
+	MediaType      string // movie|tv|"" (all)
+	Query          string
+	Watched        *bool
+	Monitored      *bool
+	SourceInstance string
+	Collection     string
+	YearMin        *int
+	YearMax        *int
+	Sort           string // title|year|updated|watched
+	Limit          int
+	Offset         int
+}
+
+// CatalogBulkUpdate patches selected catalog rows.
+type CatalogBulkUpdate struct {
+	IDs       []string `json:"ids"`
+	Monitored *bool    `json:"monitored,omitempty"`
 }
 
 // CatalogUpsertStats summarizes an ingest write.
@@ -75,6 +87,7 @@ type CatalogStore interface {
 	ListCatalogTitles(ctx context.Context, filter CatalogFilter) ([]CatalogTitle, int, error)
 	GetCatalogTitle(ctx context.Context, id string) (CatalogTitle, bool, error)
 	ApplyCatalogWatched(ctx context.Context, patches []CatalogWatchedPatch) (int, error)
+	BulkUpdateCatalogTitles(ctx context.Context, patch CatalogBulkUpdate) (int, error)
 }
 
 // NormalizeCatalogTitle trims IDs and drops empty seasons.

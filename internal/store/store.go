@@ -50,6 +50,8 @@ type Store interface {
 	GetSettings(ctx context.Context) (Settings, bool, error)
 	PutSettings(ctx context.Context, settings Settings) error
 	CatalogStore
+	JobStore
+	ScheduleStore
 }
 
 // Config selects and configures a backend. No private host defaults.

@@ -7,7 +7,7 @@ library sync** (local ↔ external) — with TorBox-friendly search-on-add limit
 > Inspired by [fisherd80/Listarr](https://github.com/fisherd80/listarr) (MIT).
 > Clean-room Go implementation; see [NOTICE](NOTICE).
 
-**Status:** v0.6 — catalog source of truth (Library browse + `source=listarr-go`) with Plex watched.
+**Status:** v0.7 — async jobs + schedules with per-schedule / per-route Safe Mode; Library filters + bulk.
 
 ## Quick start (Docker)
 
@@ -65,7 +65,7 @@ A dedicated LXC is out of scope until a stable release.
 | Rule | Detail |
 |------|--------|
 | Secrets | API key auto-generated into store on first boot; bootstrap (`LISTEN` / store backend) stays env; Settings UI may show secrets |
-| Apply / Safe Mode | Safe Mode on by default (read-only); set `LISTARR_APPLY=1` to seed Safe Mode off |
+| Apply / Safe Mode | Safe Mode = Sync UI default; Schedules + SyncRoutes each have `allowApply` |
 | Listen | Default `127.0.0.1:8787` |
 | Examples | `127.0.0.1` placeholders only — never private MagicDNS |
 
@@ -132,7 +132,7 @@ curl -s -X POST -H "X-Api-Key: $KEY" -H 'Content-Type: application/json' \
   }'
 ```
 
-Operator UI: **Library** tab for browse/ingest/watched; Sync source **listarr-go**.
+Operator UI: **Library** (filters/bulk), **Sync** (async jobs), **Schedules** (per-job allow apply), source **listarr-go**.
 
 ## Dual *arr sync (first use case)
 
