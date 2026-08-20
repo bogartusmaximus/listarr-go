@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,10 +20,10 @@ const (
 
 // Client talks to plex.tv (PIN auth) and a Plex Media Server.
 type Client struct {
-	http       *httpx.Client
-	serverURL  string
-	token      string
-	clientID   string
+	http      *httpx.Client
+	serverURL string
+	token     string
+	clientID  string
 }
 
 // New builds a PMS client. serverURL and token may be empty for PIN-only use.
@@ -155,10 +156,10 @@ func (c *Client) AccountIdentity(ctx context.Context) (string, error) {
 
 // LibraryPath is one folder path from a Plex library section.
 type LibraryPath struct {
-	SectionID   string `json:"sectionId"`
+	SectionID    string `json:"sectionId"`
 	SectionTitle string `json:"sectionTitle"`
-	Type        string `json:"type"` // movie|show|artist|photo|…
-	Path        string `json:"path"`
+	Type         string `json:"type"` // movie|show|artist|photo|…
+	Path         string `json:"path"`
 }
 
 // ListLibraryPaths returns unique library folder paths from the configured PMS.
@@ -180,27 +181,47 @@ func (c *Client) ListLibraryPaths(ctx context.Context, typeFilter string) ([]Lib
 	}
 	var payload struct {
 		MediaContainer struct {
-			Directory []struct {
-				Key   string `json:"key"`
-				Title string `json:"title"`
-				Type  string `json:"type"`
-				Location []struct {
-					Path string `json:"path"`
-				} `json:"Location"`
-			} `json:"Directory"`
+			Directory json.RawMessage `json:"Directory"`
 		} `json:"MediaContainer"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("plex decode library sections: %w", err)
 	}
+	dirs, err := decodePlexDirectories(payload.MediaContainer.Directory)
+	if err != nil {
+		return nil, err
+	}
+	return collectLibraryPaths(dirs, typeFilter)
+}
+
+type plexDirectory struct {
+	Key      string          `json:"key"`
+	Title    string          `json:"title"`
+	Type     string          `json:"type"`
+	Location json.RawMessage `json:"Location"`
+}
+
+type plexLocation struct {
+	Path string `json:"path"`
+}
+
+func decodePlexDirectories(raw json.RawMessage) ([]plexDirectory, error) {
+	return decodeJSONList[plexDirectory](raw)
+}
+
+func collectLibraryPaths(dirs []plexDirectory, typeFilter string) ([]LibraryPath, error) {
 	out := make([]LibraryPath, 0)
 	seen := map[string]struct{}{}
-	for _, dir := range payload.MediaContainer.Directory {
+	for _, dir := range dirs {
 		kind := strings.ToLower(strings.TrimSpace(dir.Type))
 		if typeFilter != "" && kind != typeFilter {
 			continue
 		}
-		for _, loc := range dir.Location {
+		locs, err := decodePlexLocations(dir.Location)
+		if err != nil {
+			return nil, err
+		}
+		for _, loc := range locs {
 			path := strings.TrimSpace(loc.Path)
 			if path == "" {
 				continue
@@ -218,6 +239,44 @@ func (c *Client) ListLibraryPaths(ctx context.Context, typeFilter string) ([]Lib
 		}
 	}
 	return out, nil
+}
+
+func decodePlexLocations(raw json.RawMessage) ([]plexLocation, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil, nil
+	}
+	if trimmed[0] == '"' {
+		var path string
+		if err := json.Unmarshal(trimmed, &path); err != nil {
+			return nil, fmt.Errorf("plex decode location path: %w", err)
+		}
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return nil, nil
+		}
+		return []plexLocation{{Path: path}}, nil
+	}
+	return decodeJSONList[plexLocation](raw)
+}
+
+func decodeJSONList[T any](raw json.RawMessage) ([]T, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil, nil
+	}
+	if trimmed[0] == '[' {
+		var rows []T
+		if err := json.Unmarshal(trimmed, &rows); err != nil {
+			return nil, fmt.Errorf("plex decode list: %w", err)
+		}
+		return rows, nil
+	}
+	var row T
+	if err := json.Unmarshal(trimmed, &row); err != nil {
+		return nil, fmt.Errorf("plex decode item: %w", err)
+	}
+	return []T{row}, nil
 }
 
 // TestConnection hits /identity on the configured PMS.
@@ -238,7 +297,7 @@ func (c *Client) TestConnection(ctx context.Context) (serverName string, err err
 	}
 	var payload struct {
 		MediaContainer struct {
-			FriendlyName string `json:"friendlyName"`
+			FriendlyName      string `json:"friendlyName"`
 			MachineIdentifier string `json:"machineIdentifier"`
 		} `json:"MediaContainer"`
 	}
