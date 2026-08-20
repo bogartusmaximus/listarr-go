@@ -125,14 +125,13 @@ func (c *Client) listSectionItems(ctx context.Context, sectionKey string, plexTy
 		var payload struct {
 			MediaContainer struct {
 				Metadata []struct {
-					RatingKey    string `json:"ratingKey"`
-					Title        string `json:"title"`
-					Type         string `json:"type"`
-					ViewCount    int    `json:"viewCount"`
-					LastViewedAt int64  `json:"lastViewedAt"`
-					Guid         []struct {
-						ID string `json:"id"`
-					} `json:"Guid"`
+					RatingKey    string       `json:"ratingKey"`
+					Title        string       `json:"title"`
+					Type         string       `json:"type"`
+					ViewCount    int          `json:"viewCount"`
+					LastViewedAt int64        `json:"lastViewedAt"`
+					Guid         plexGUIDList `json:"Guid"`
+					LegacyGUID   string       `json:"guid"`
 				} `json:"Metadata"`
 			} `json:"MediaContainer"`
 		}
@@ -157,7 +156,7 @@ func (c *Client) listSectionItems(ctx context.Context, sectionKey string, plexTy
 				t := time.Unix(meta.LastViewedAt, 0).UTC()
 				item.LastViewedAt = &t
 			}
-			item.TMDBID, item.IMDBID = parsePlexGuids(meta.Guid)
+			item.TMDBID, item.IMDBID = parsePlexGuids(meta.Guid, meta.LegacyGUID)
 			if item.TMDBID < 1 && item.IMDBID == "" {
 				continue
 			}
@@ -168,22 +167,4 @@ func (c *Client) listSectionItems(ctx context.Context, sectionKey string, plexTy
 		}
 	}
 	return out, nil
-}
-
-func parsePlexGuids(guids []struct {
-	ID string `json:"id"`
-}) (tmdbID int, imdbID string) {
-	for _, g := range guids {
-		id := strings.TrimSpace(g.ID)
-		switch {
-		case strings.HasPrefix(id, "tmdb://"):
-			n, _ := strconv.Atoi(strings.TrimPrefix(id, "tmdb://"))
-			if n > 0 {
-				tmdbID = n
-			}
-		case strings.HasPrefix(id, "imdb://"):
-			imdbID = strings.TrimPrefix(id, "imdb://")
-		}
-	}
-	return tmdbID, imdbID
 }
