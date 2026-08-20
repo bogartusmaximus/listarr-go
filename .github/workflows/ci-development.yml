@@ -53,10 +53,13 @@ jobs:
           else
             echo "No root-owned paths under $work"
           fi
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.22.x"
+          # Self-hosted runners keep ~/go/pkg/mod between jobs; restoring the
+          # GHA module cache over those read-only files makes tar exit 2.
+          cache: false
       - name: Test
         run: go test ./...
 
