@@ -7,7 +7,7 @@ library sync** (local ↔ external) — with TorBox-friendly search-on-add limit
 > Inspired by [fisherd80/Listarr](https://github.com/fisherd80/listarr) (MIT).
 > Clean-room Go implementation; see [NOTICE](NOTICE).
 
-**Status:** v0.5 — embedded operator web UI for sync/discover/activity testing.
+**Status:** v0.6 — catalog source of truth (Library browse + `source=listarr-go`) with Plex watched.
 
 ## Quick start (Docker)
 
@@ -94,6 +94,45 @@ export LISTARR_STORE_BACKEND=polars
 ```
 
 Recent runs: `GET /api/v1/activity`. Settings: `GET /api/v1/settings`. Polars CSV smoke: `uv run --with polars python scripts/test_polars_store.py data/polars/sync_runs.csv`.
+
+## Catalog source of truth (v0.6)
+
+listarr-go can own a durable media catalog (unique by TMDB and/or IMDB per media type),
+store collection + season metadata, pull watched state from Plex, and use that catalog
+as a sync source into Radarr/Sonarr.
+
+| Plane | Role |
+|-------|------|
+| Postgres / Patroni | Production SoT (`LISTARR_STORE_BACKEND=postgres`) |
+| Polars CSV | Default/test backend **and** optional cache mirror when `LISTARR_POLARS_DIR` is set with postgres |
+
+```bash
+# Pull *arr library into catalog
+curl -s -X POST -H "X-Api-Key: $KEY" -H 'Content-Type: application/json' \
+  http://127.0.0.1:8787/api/v1/catalog/ingest \
+  -d '{"sourceInstance":"local","mediaType":"movie","maxItems":2000}'
+
+# Refresh watched flags from Plex
+curl -s -X POST -H "X-Api-Key: $KEY" \
+  http://127.0.0.1:8787/api/v1/catalog/plex-watched
+
+# Browse
+curl -s -H "X-Api-Key: $KEY" \
+  'http://127.0.0.1:8787/api/v1/catalog/titles?mediaType=movie&watched=false&limit=50'
+
+# Sync catalog → target *arr
+curl -s -X POST -H "X-Api-Key: $KEY" -H 'Content-Type: application/json' \
+  http://127.0.0.1:8787/api/v1/sync/preview \
+  -d '{
+    "source":"listarr-go",
+    "mediaType":"movie",
+    "catalogFilter":{"unwatchedOnly":true},
+    "maxItems":100,
+    "target":{"instance":"remote","rootFolderPath":"/data/movies","qualityProfileId":1,"monitored":true,"searchOnAdd":true}
+  }'
+```
+
+Operator UI: **Library** tab for browse/ingest/watched; Sync source **listarr-go**.
 
 ## Dual *arr sync (first use case)
 

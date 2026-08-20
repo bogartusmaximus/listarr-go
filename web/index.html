@@ -26,6 +26,7 @@
 
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button type="button" class="tab active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
+    <button type="button" class="tab" data-tab="library" role="tab" aria-selected="false">Library</button>
     <button type="button" class="tab" data-tab="sync" role="tab" aria-selected="false">Sync</button>
     <button type="button" class="tab" data-tab="discover" role="tab" aria-selected="false">Discover</button>
     <button type="button" class="tab" data-tab="activity" role="tab" aria-selected="false">Activity</button>
@@ -49,6 +50,61 @@
       <ul class="instance-list" id="instanceList"></ul>
     </section>
 
+    <section class="panel" id="panel-library" data-panel="library" hidden>
+      <h2>Source of truth</h2>
+      <p class="lede">Browse the listarr-go catalog (unique by TMDB/IMDB). Ingest from *arr, refresh watched from Plex, then sync out with source <code>listarr-go</code>.</p>
+      <form id="libraryForm" class="inline-form">
+        <label class="field">
+          <span>Media</span>
+          <select id="libMedia">
+            <option value="">all</option>
+            <option value="movie">movie</option>
+            <option value="tv">tv</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Watched</span>
+          <select id="libWatched">
+            <option value="all">all</option>
+            <option value="true">watched</option>
+            <option value="false">unwatched</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Search</span>
+          <input type="text" id="libQuery" placeholder="title, imdb, tmdb…" />
+        </label>
+        <button type="submit" class="btn primary">Browse</button>
+      </form>
+      <div class="library-actions">
+        <label class="field">
+          <span>Ingest from</span>
+          <select id="libIngestInstance"></select>
+        </label>
+        <label class="field">
+          <span>Media</span>
+          <select id="libIngestMedia">
+            <option value="movie">movie</option>
+            <option value="tv">tv</option>
+          </select>
+        </label>
+        <button type="button" class="btn" id="btnLibIngest">Ingest *arr → catalog</button>
+        <button type="button" class="btn" id="btnLibPlexWatched">Refresh Plex watched</button>
+      </div>
+      <p class="hint" id="libMeta"></p>
+      <div class="table-wrap" id="libraryWrap" hidden>
+        <table class="results" id="libraryResults">
+          <thead>
+            <tr>
+              <th>Title</th><th>Type</th><th>Year</th><th>TMDB</th><th>IMDB</th>
+              <th>Collection</th><th>Seasons</th><th>Watched</th><th>Sources</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel" id="panel-sync" data-panel="sync" hidden>
       <h2>Library sync</h2>
       <p class="lede">Build a preview against a source library, then apply only when enabled.</p>
@@ -59,6 +115,7 @@
             <span>Source type</span>
             <select name="source" id="syncSource">
               <option value="arr-library" selected>arr-library</option>
+              <option value="listarr-go">listarr-go (catalog SoT)</option>
               <option value="tmdb">tmdb</option>
             </select>
           </label>
@@ -72,6 +129,14 @@
           <label class="field" id="wrapSourceInstance">
             <span>Source instance</span>
             <select name="sourceInstance" id="syncSourceInstance"></select>
+          </label>
+          <label class="field check" id="wrapCatalogWatched" hidden>
+            <input type="checkbox" id="syncCatalogWatchedOnly" />
+            <span>Catalog watched only</span>
+          </label>
+          <label class="field check" id="wrapCatalogUnwatched" hidden>
+            <input type="checkbox" id="syncCatalogUnwatchedOnly" />
+            <span>Catalog unwatched only</span>
           </label>
           <label class="field check">
             <input type="checkbox" name="monitoredOnly" id="syncMonitored" checked />

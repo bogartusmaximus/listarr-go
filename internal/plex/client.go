@@ -65,7 +65,7 @@ func (c *Client) plexHeaders() http.Header {
 	h := make(http.Header)
 	h.Set("Accept", "application/json")
 	h.Set("X-Plex-Product", plexProduct)
-	h.Set("X-Plex-Version", "0.5.0")
+	h.Set("X-Plex-Version", "0.6.0")
 	h.Set("X-Plex-Client-Identifier", c.clientID)
 	h.Set("X-Plex-Device", plexDeviceName)
 	h.Set("X-Plex-Device-Name", plexDeviceName)

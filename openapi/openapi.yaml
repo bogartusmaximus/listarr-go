@@ -4,7 +4,7 @@ info:
   description: |
     Public listarr-go API. Inspired by fisherd80/Listarr (MIT).
     Safe defaults: loopback listen, apply opt-in, no private host defaults.
-  version: 0.5.1
+  version: 0.6.0
 servers:
   - url: http://127.0.0.1:8787
     description: Local loopback (default)
@@ -231,6 +231,80 @@ paths:
       responses:
         "200":
           description: Library paths
+  /api/v1/catalog/titles:
+    get:
+      operationId: listCatalogTitles
+      summary: Browse listarr-go catalog SoT (unique by TMDB/IMDB)
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: mediaType
+          in: query
+          schema: { type: string, enum: [movie, tv] }
+        - name: watched
+          in: query
+          schema: { type: string, enum: [true, false, all] }
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 2000, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Catalog page
+  /api/v1/catalog/titles/{id}:
+    get:
+      operationId: getCatalogTitle
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Catalog title
+        "404":
+          description: Not found
+  /api/v1/catalog/ingest:
+    post:
+      operationId: ingestCatalogFromArr
+      summary: Pull Radarr/Sonarr library into listarr-go catalog
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceInstance, mediaType]
+              properties:
+                sourceInstance: { type: string }
+                mediaType: { type: string, enum: [movie, tv] }
+                maxItems: { type: integer }
+                sourceFilter: { type: object }
+      responses:
+        "200":
+          description: Ingest result
+  /api/v1/catalog/plex-watched:
+    post:
+      operationId: syncCatalogPlexWatched
+      summary: Apply Plex viewCount to matching catalog titles
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: mediaType
+          in: query
+          schema: { type: string, enum: [movie, tv] }
+      responses:
+        "200":
+          description: Watched sync result
   /api/v1/discover/movies:
     get:
       operationId: discoverMovies
@@ -333,13 +407,20 @@ components:
       properties:
         source:
           type: string
-          enum: [tmdb, arr-library]
+          enum: [tmdb, arr-library, listarr-go]
         mediaType:
           type: string
           enum: [movie, tv]
         sourceInstance:
           type: string
           description: Required when source=arr-library
+        catalogFilter:
+          type: object
+          description: Optional filters when source=listarr-go
+          properties:
+            watchedOnly: { type: boolean }
+            unwatchedOnly: { type: boolean }
+            query: { type: string }
         sourceFilter:
           type: object
           properties:

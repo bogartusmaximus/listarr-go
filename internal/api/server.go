@@ -22,7 +22,7 @@ import (
 
 const (
 	AppName = "listarr-go"
-	Version = "0.5.1"
+	Version = "0.6.0"
 )
 
 // Server serves health/status, settings, discover, arr inventory, and sync endpoints.
@@ -54,6 +54,10 @@ func New(rt *appstate.Runtime) *Server {
 	s.mux.HandleFunc("POST /api/v1/plex/test", s.requireAPIKey(s.handlePlexTest))
 	s.mux.HandleFunc("GET /api/v1/plex/libraries", s.requireAPIKey(s.handlePlexLibraries))
 	s.mux.HandleFunc("GET /api/v1/activity", s.requireAPIKey(s.handleActivity))
+	s.mux.HandleFunc("GET /api/v1/catalog/titles", s.requireAPIKey(s.handleCatalogList))
+	s.mux.HandleFunc("GET /api/v1/catalog/titles/{id}", s.requireAPIKey(s.handleCatalogGet))
+	s.mux.HandleFunc("POST /api/v1/catalog/ingest", s.requireAPIKey(s.handleCatalogIngest))
+	s.mux.HandleFunc("POST /api/v1/catalog/plex-watched", s.requireAPIKey(s.handleCatalogPlexWatched))
 	s.mux.HandleFunc("POST /api/v1/sync/preview", s.requireAPIKey(s.handleSyncPreview))
 	s.mux.HandleFunc("POST /api/v1/sync/apply", s.requireAPIKey(s.handleSyncApply))
 	s.mountUI()

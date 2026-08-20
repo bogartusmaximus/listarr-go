@@ -34,6 +34,7 @@ reference instance **names** only — URLs/keys never appear in sync JSON.
 |-------|--------|--------|
 | 1st | Dual Radarr + dual Sonarr library sync | **v0.3** (`source=arr-library`) |
 | 1st | Persist sync activity (postgres + polars) | **v0.4** |
+| 1st | listarr-go catalog SoT (Patroni + Polars cache, Plex watched, browse UI) | **v0.6** |
 | 2nd | Treat *arr **Import Lists** as named sources (tag filters today; list-item fetch next) | Metadata API now; item fetch follows |
 | 3rd | Any *arr family (Lidarr, …) behind the same registry + sync contracts | Kind enum ready; clients later |
 | 3rd | Seerr as both catalog IO and request/pipeline control plane | Phase 2–3 |
@@ -62,7 +63,8 @@ titles” when lists stamp tags on add.
 | 0–1a | Health/status, apply gate, rate limiter |
 | 1b | TMDB discover + single-target *arr apply |
 | 1c | Named *arr registry + arr-library dual-instance sync |
-| **1e** | **Embedded operator web UI** (`/`) — **current** |
+| **1e** | **Embedded operator web UI** (`/`) | shipped |
+| **1f** | **Catalog SoT** — `source=listarr-go`, Patroni/postgres + Polars cache, Plex watched, Library tab | **current** |
 | 2 | IMDB + Seerr import/export; Import List item fetch |
 | 3 | Seerr add/delete + pipeline trigger |
 | 4 | UI parity with upstream Listarr + optional MCP |
