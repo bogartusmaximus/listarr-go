@@ -108,9 +108,11 @@
           </label>
           <label class="field">
             <span>Root folder path</span>
-            <input type="text" name="rootFolderPath" id="syncRoot" list="syncRootList" required placeholder="/data/movies" />
-            <datalist id="syncRootList"></datalist>
-            <p class="hint" id="syncRootHint">Paths come from the target *arr (and Plex, when linked).</p>
+            <select name="rootFolderPath" id="syncRoot" required>
+              <option value="">Loading…</option>
+            </select>
+            <input type="text" id="syncRootCustom" hidden placeholder="/data/movies" autocomplete="off" spellcheck="false" />
+            <p class="hint" id="syncRootHint">Paths come from the target *arr (and Plex libraries, when linked).</p>
           </label>
           <label class="field check">
             <input type="checkbox" id="syncTargetAdvanced" />

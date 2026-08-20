@@ -60,6 +60,67 @@ func TestListLibraryPaths(t *testing.T) {
 	}
 }
 
+func TestListLibraryPathsSingleLocationObject(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/library/sections" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"MediaContainer": {
+				"Directory": {
+					"key":"1",
+					"title":"Movies",
+					"type":"movie",
+					"Location":{"path":"/data/movies-4k"}
+				}
+			}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	client, err := plex.New(srv.URL, "tok", "cid", httpx.New(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := client.ListLibraryPaths(context.Background(), "movie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0].Path != "/data/movies-4k" || paths[0].SectionTitle != "Movies" {
+		t.Fatalf("%+v", paths)
+	}
+}
+
+func TestListLibraryPathsStringLocation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/library/sections" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"MediaContainer": {
+				"Directory": [
+					{"key":"1","title":"Movies","type":"movie","Location":"/mnt/media/movies"}
+				]
+			}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	client, err := plex.New(srv.URL, "tok", "cid", httpx.New(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := client.ListLibraryPaths(context.Background(), "movie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0].Path != "/mnt/media/movies" {
+		t.Fatalf("%+v", paths)
+	}
+}
+
 func TestTestConnection(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/identity" {

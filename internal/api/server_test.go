@@ -86,6 +86,12 @@ func TestUIIndexNoAuth(t *testing.T) {
 	if strings.Contains(body, `id="btnSaveSettings"`) {
 		t.Fatal("save button should be removed; settings autosave")
 	}
+	if !strings.Contains(body, `id="syncRootCustom"`) || !strings.Contains(body, `<select name="rootFolderPath" id="syncRoot"`) {
+		t.Fatal("root folder should be a visible select with a custom-path input")
+	}
+	if strings.Contains(body, `id="syncRootList"`) || strings.Contains(body, "<datalist") {
+		t.Fatal("root folder datalist should be removed")
+	}
 }
 
 func TestUIAssetsNoAuth(t *testing.T) {
@@ -95,6 +101,10 @@ func TestUIAssetsNoAuth(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	css := rec.Body.String()
+	if !strings.Contains(css, "align-content: start") || !strings.Contains(css, "align-items: start") {
+		t.Fatal("sync fieldsets must pack content at the start so Advanced-off does not stretch gaps")
 	}
 }
 

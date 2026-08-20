@@ -440,7 +440,7 @@
       maxItems: Number($("syncMax").value) || 100,
       target: {
         instance: $("syncTargetInstance").value,
-        rootFolderPath: $("syncRoot").value.trim(),
+        rootFolderPath: selectedRootFolderPath(),
         qualityProfileId: Number($("syncQP").value),
         tags: parseIntList($("syncTargetTags").value),
         monitored: $("syncTargetMonitored").checked,
@@ -551,6 +551,8 @@
     }
   }
 
+  const CUSTOM_ROOT = "__custom__";
+
   function fillQualityProfiles(profiles) {
     const el = $("syncQP");
     const prev = Number(el.value) || 0;
@@ -573,68 +575,128 @@
     el.value = ids.includes(prev) ? String(prev) : String(list[0].id);
   }
 
-  function addRootOptions(paths, labels) {
-    const list = $("syncRootList");
-    const seen = new Set([...list.querySelectorAll("option")].map((o) => o.value));
-    for (const [i, path] of paths.entries()) {
+  function selectedRootFolderPath() {
+    if ($("syncRoot").value === CUSTOM_ROOT) {
+      return $("syncRootCustom").value.trim();
+    }
+    return ($("syncRoot").value || "").trim();
+  }
+
+  function setCustomRootVisible(on) {
+    $("syncRootCustom").hidden = !on;
+    $("syncRootCustom").required = on;
+  }
+
+  function appendRootGroup(select, label, items) {
+    if (!items.length) return;
+    const group = document.createElement("optgroup");
+    group.label = label;
+    for (const item of items) {
+      const opt = document.createElement("option");
+      opt.value = item.value;
+      opt.textContent = item.text;
+      group.appendChild(opt);
+    }
+    select.appendChild(group);
+  }
+
+  function uniqueRootItems(rows, seen, textFn) {
+    const items = [];
+    for (const row of rows || []) {
+      const path = String((row && row.path) || "").trim();
       if (!path || seen.has(path)) continue;
       seen.add(path);
-      const opt = document.createElement("option");
-      opt.value = path;
-      if (labels && labels[i]) opt.label = labels[i];
-      list.appendChild(opt);
+      items.push({ value: path, text: textFn(row, path) });
     }
+    return items;
+  }
+
+  function fillRootFolders(arrRoots, plexLibs) {
+    const el = $("syncRoot");
+    const prev = selectedRootFolderPath();
+    const seen = new Set();
+    const arrItems = uniqueRootItems(arrRoots, seen, (_row, path) => path);
+    const plexItems = uniqueRootItems(plexLibs, seen, (lib, path) => {
+      const title = String((lib && lib.sectionTitle) || "").trim();
+      return title ? `${title} (${path})` : path;
+    });
+    el.innerHTML = "";
+    appendRootGroup(el, "Target *arr", arrItems);
+    appendRootGroup(el, "Plex libraries", plexItems);
+    const custom = document.createElement("option");
+    custom.value = CUSTOM_ROOT;
+    custom.textContent = "Custom path…";
+    el.appendChild(custom);
+    applyRootSelection(el, prev, [...arrItems, ...plexItems].map((i) => i.value));
+  }
+
+  function applyRootSelection(select, prev, values) {
+    if (!values.length) {
+      select.value = CUSTOM_ROOT;
+      if (prev) $("syncRootCustom").value = prev;
+      setCustomRootVisible(true);
+      return;
+    }
+    if (prev && values.includes(prev)) {
+      select.value = prev;
+      setCustomRootVisible(false);
+      return;
+    }
+    if (prev) {
+      select.value = CUSTOM_ROOT;
+      $("syncRootCustom").value = prev;
+      setCustomRootVisible(true);
+      return;
+    }
+    select.value = values[0];
+    setCustomRootVisible(false);
+  }
+
+  function rootFolderHint(arrCount, plexCount, arrErr, plexErr) {
+    const parts = [];
+    if (arrCount) parts.push(`${arrCount} *arr root(s)`);
+    if (plexCount) parts.push(`${plexCount} Plex path(s)`);
+    if (parts.length) {
+      let msg = `${parts.join(", ")} — pick a path or Custom.`;
+      if (arrErr) msg += ` *arr extras unavailable (${arrErr}).`;
+      if (plexErr) msg += ` Plex extras unavailable (${plexErr}).`;
+      return msg;
+    }
+    if (arrErr && plexErr) {
+      return `*arr (${arrErr}); Plex (${plexErr}). Choose Custom path.`;
+    }
+    if (arrErr) return `Target *arr options unavailable (${arrErr}). Choose Custom path.`;
+    if (plexErr) return `Plex libraries unavailable (${plexErr}). Choose Custom path.`;
+    return "No *arr or Plex paths — choose Custom path and type one.";
   }
 
   async function refreshTargetOptions() {
-    const hint = $("syncRootHint");
-    $("syncRootList").innerHTML = "";
     const name = $("syncTargetInstance").value;
-    let arrCount = 0;
+    let arrRoots = [];
+    let plexLibs = [];
+    let arrErr = "";
+    let plexErr = "";
     if (name) {
       try {
         const body = await api(`/api/v1/arr/${encodeURIComponent(name)}/options`);
-        const roots = body.rootFolders || [];
-        arrCount = roots.length;
+        arrRoots = body.rootFolders || [];
         fillQualityProfiles(body.qualityProfiles || []);
-        addRootOptions(roots.map((r) => r.path));
-        if (!$("syncRoot").value && roots[0] && roots[0].path) {
-          $("syncRoot").value = roots[0].path;
-        }
       } catch (err) {
         fillQualityProfiles([]);
-        hint.textContent = `Target *arr options unavailable (${err.message}).`;
+        arrErr = err.message;
       }
     } else {
       fillQualityProfiles([]);
     }
-    await refreshPlexRoots(arrCount);
-  }
-
-  async function refreshPlexRoots(arrCount = 0) {
-    const hint = $("syncRootHint");
     const mediaType = $("syncMedia").value === "tv" ? "tv" : "movie";
     try {
       const body = await api(`/api/v1/plex/libraries?mediaType=${encodeURIComponent(mediaType)}`);
-      const libs = body.libraries || [];
-      addRootOptions(
-        libs.map((lib) => lib.path || ""),
-        libs.map((lib) => (lib.sectionTitle ? `${lib.sectionTitle} (${lib.path})` : lib.path)),
-      );
-      const parts = [];
-      if (arrCount) parts.push(`${arrCount} *arr root(s)`);
-      if (libs.length) parts.push(`${libs.length} Plex path(s)`);
-      hint.textContent = parts.length
-        ? `${parts.join(", ")} — pick or type a path.`
-        : "No *arr or Plex paths — type a root folder path.";
-      if (!$("syncRoot").value && libs[0] && libs[0].path) {
-        $("syncRoot").value = libs[0].path;
-      }
+      plexLibs = body.libraries || [];
     } catch (err) {
-      hint.textContent = arrCount
-        ? `${arrCount} *arr root(s). Plex unavailable (${err.message}).`
-        : `Plex libraries unavailable (${err.message}). Type a root folder path.`;
+      plexErr = err.message;
     }
+    fillRootFolders(arrRoots, plexLibs);
+    $("syncRootHint").textContent = rootFolderHint(arrRoots.length, plexLibs.length, arrErr, plexErr);
   }
 
   async function linkPlex() {
@@ -718,6 +780,11 @@
     });
     $("syncTargetInstance").addEventListener("change", () => {
       refreshTargetOptions().catch(() => {});
+    });
+    $("syncRoot").addEventListener("change", () => {
+      const custom = $("syncRoot").value === CUSTOM_ROOT;
+      setCustomRootVisible(custom);
+      if (custom) $("syncRootCustom").focus();
     });
     $("syncForm").addEventListener("submit", (ev) => {
       ev.preventDefault();
