@@ -1,0 +1,17 @@
+{# Base HTML shell for homelab *-go dashboards. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+  {% block body %}{% endblock %}
+  {% block scripts %}
+  <script src="/assets/app.js"{% if defer_scripts is defined and defer_scripts %} defer{% endif %}></script>
+  {% endblock %}
+</body>
+</html>

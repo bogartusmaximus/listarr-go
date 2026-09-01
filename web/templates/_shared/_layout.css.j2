@@ -1,0 +1,147 @@
+{# Header, sections, tables, cards — tdarr-go layout primitives. #}
+.top, main, footer, .foot {
+  width: var(--content-width);
+  margin-inline: auto;
+}
+.top {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 2rem 0 1rem;
+  flex-wrap: wrap;
+}
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  color: var(--accent);
+  margin: 0;
+}
+h1, .brand {
+  margin: 0.2rem 0;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.tag, .tagline {
+  color: var(--muted);
+  margin: 0;
+  max-width: 36rem;
+}
+.chips {
+  display: flex;
+  gap: 1rem;
+  margin: 0;
+  flex-wrap: wrap;
+}
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.85rem 1rem;
+  margin: 0;
+}
+.chips div, .status-chip {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 0.6rem 0.9rem;
+  min-width: 5rem;
+}
+.chips dt, .chip-label, .status-grid dt {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.chips dd, .chip-value, .status-grid dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.status-grid > div {
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--line);
+}
+h2 {
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+h3 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.05rem;
+}
+.lede {
+  color: var(--muted);
+  margin: 0 0 1rem;
+  max-width: 44rem;
+}
+table, .results {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+}
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+th {
+  color: var(--muted);
+  font-weight: 500;
+}
+.queue-note { color: var(--accent); margin: 0 0 0.75rem; }
+tr.next td { color: var(--accent); background: #143028; }
+tr.next td:first-child {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cards { display: grid; gap: 0.8rem; }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 1rem;
+}
+.card h3 { margin: 0 0 0.3rem; }
+.pct {
+  margin: 0 0 0.2rem;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.meta, .hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.bar {
+  height: 12px;
+  background: #0b1014;
+  margin: 0.6rem 0 0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  min-width: 0;
+  transition: width 0.35s linear;
+}
+.empty { color: var(--muted); }
+.recent { list-style: none; padding: 0; margin: 0; }
+.recent li { padding: 0.35rem 0; border-bottom: 1px solid var(--line); }
+.ok { color: var(--accent); }
+.fail, .danger-text { color: var(--bad); }
+footer, .foot {
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 2rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+}

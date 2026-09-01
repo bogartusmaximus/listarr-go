@@ -1,0 +1,14 @@
+{# Global reset and page shell — shared across *-go dashboards and homepage. #}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html { color-scheme: dark; }
+[hidden] { display: none !important; }
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  line-height: 1.45;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
