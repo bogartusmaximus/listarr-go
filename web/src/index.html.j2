@@ -1,12 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title></title>
-  <link rel="stylesheet" href="/assets/app.css" />
-</head>
-<body>
+{% extends "_layout.html.j2" %}
+{% block title %}listarr-go{% endblock %}
+{% block body %}
 <header class="top">
     <div class="brand-block">
       <p class="eyebrow">preview / apply tool</p>
@@ -441,6 +435,4 @@
   </footer>
   <div class="toast" id="toast" hidden role="status"></div>
   <script src="/assets/app.js" defer></script>
-  <script src="/assets/app.js" defer></script>
-</body>
-</html>
+{% endblock %}

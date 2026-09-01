@@ -216,6 +216,10 @@ that Import List stamped (`sourceFilter.tagIds`).
 | `LISTARR_DATABASE_URL` / `DATABASE_URL` | none | Required for `postgres` |
 | `LISTARR_POLARS_DIR` | `data/polars` | CSV + `settings.json` directory |
 
+## Web UI (Jinja2)
+
+Dark homelab theme (shared with [tdarr-go](https://github.com/bogartusmaximus/autobot-homelab/tree/main/templates/homelab-ui)). Sources live under `web/src/`; run `./scripts/render-web-ui.sh` after editing templates, then commit rendered `web/index.html` and `web/assets/`. Sync shared partials from autobot-homelab: `scripts/go-ui/sync-shared-templates.sh` → `web/templates/_shared/`.
+
 ## Goals
 
 See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
