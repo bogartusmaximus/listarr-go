@@ -48,6 +48,8 @@ Do not commit private MagicDNS or LAN addresses.
 
 A dedicated LXC is out of scope until a stable release.
 
+Version bumps are Dependabot PRs prechecked by GitHub CI (`.github/workflows/ci.yml`), not a weekly patch day. `cooldown.default-days: 3` applies to version upgrades; security updates are exempt. See `.github/dependabot.yml`.
+
 - Local compose publishes only on **`127.0.0.1:8787`** (not the LAN).
 - Inside the container listen is `0.0.0.0:8787` so the publish works; the host binary default stays loopback.
 - Optional Postgres: set `LISTARR_STORE_BACKEND=postgres` and
